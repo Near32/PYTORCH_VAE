@@ -102,14 +102,13 @@ class Encoder(nn.Module) :
 	def forward(self,x) :
 		return self.encode(x)
 
-class VAE(nn.Module) :
-	def __init__(self, net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
-		#Encoder.__init__(self, img_dim=img_dim, conv_dim=conv_dim, z_dim=2*z_dim)
-		#Decoder.__init__(self, img_dim=img_dim, conv_dim=conv_dim, z_dim=z_dim)
-		super(VAE,self).__init__()
+class betaVAE(nn.Module) :
+	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
+		super(betaVAE,self).__init__()
 		self.encoder = Encoder(net_depth=net_depth,img_dim=img_dim, img_depth=img_depth,conv_dim=conv_dim, z_dim=2*z_dim)
 		self.decoder = Decoder(net_depth=net_depth,img_dim=img_dim, img_depth=img_depth, conv_dim=conv_dim, z_dim=z_dim)
 
+		self.beta = beta
 		self.use_cuda = use_cuda
 
 		if self.use_cuda :
@@ -154,7 +153,8 @@ def test_mnist():
 	conv_dim = 32
 	use_cuda = True#False
 	net_depth = 2
-	vae = VAE(net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
+	beta = 10.0
+	betavae = betaVAE(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	
 	# Optim :
 	lr = 1e-4
@@ -190,13 +190,13 @@ def test_mnist():
 	
 
 	path = 'layers{}-z{}-conv{}-lr{}'.format(net_depth,z_dim,conv_dim,lr)
-	if not os.path.exists( './data/{}/'.format(path) ) :
-		os.mkdir('./data/{}/'.format(path))
-	if not os.path.exists( './data/{}/gen_images/'.format(path) ) :
-		os.mkdir('./data/{}/gen_images/'.format(path))
+	if not os.path.exists( './beta-data/{}/'.format(path) ) :
+		os.mkdir('./beta-data/{}/'.format(path))
+	if not os.path.exists( './beta-data/{}/gen_images/'.format(path) ) :
+		os.mkdir('./beta-data/{}/gen_images/'.format(path))
 
 	
-	torchvision.utils.save_image(fixed_x.cpu(), './data/{}/real_images.png'.format(path))
+	torchvision.utils.save_image(fixed_x.cpu(), './beta-data/{}/real_images.png'.format(path))
 	
 	fixed_x = Variable(fixed_x.view(fixed_x.size(0), img_depth, img_dim, img_dim))
 	if use_cuda :
@@ -205,14 +205,14 @@ def test_mnist():
 	
 	for epoch in range(50):
 	    # Save the reconstructed images
-	    reconst_images, _, _ = vae(fixed_x)
+	    reconst_images, _, _ = betavae(fixed_x)
 	    reconst_images = reconst_images.view(-1, img_depth, img_dim, img_dim)
-	    torchvision.utils.save_image(reconst_images.data.cpu(),'./data/{}/reconst_images_{}.png'.format(path,(epoch+1)) )
+	    torchvision.utils.save_image(reconst_images.data.cpu(),'./beta-data/{}/reconst_images_{}.png'.format(path,(epoch+1)) )
 
 	    # Save generated variable images :
-	    gen_images = vae.decoder(var_z0)
+	    gen_images = betavae.decoder(var_z0)
 	    gen_images = gen_images.view(-1, img_depth, img_dim, img_dim)
-	    torchvision.utils.save_image(gen_images.data.cpu(),'./data/{}/gen_images/{}.png'.format(path,(epoch+1)) )
+	    torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/{}.png'.format(path,(epoch+1)) )
 
 	    for i, (images, _) in enumerate(data_loader):
 	        
@@ -220,7 +220,7 @@ def test_mnist():
 	        if use_cuda :
 	        	images = images.cuda() 
 	        
-	        out, mu, log_var = vae(images)
+	        out, mu, log_var = betavae(images)
 	        
 	        
 	        # Compute reconstruction loss and kl divergence
@@ -231,7 +231,7 @@ def test_mnist():
 	        kl_divergence = torch.sum(0.5 * (mu**2 + torch.exp(log_var) - log_var -1))
 	        
 	        # Backprop + Optimize
-	        total_loss = reconst_loss + kl_divergence
+	        total_loss = reconst_loss - betavae.beta*kl_divergence
 	        optimizer.zero_grad()
 	        total_loss.backward()
 	        optimizer.step()
