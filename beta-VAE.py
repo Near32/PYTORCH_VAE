@@ -3,6 +3,26 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+class Distribution(object) :
+	def sample(self) :
+		raise NotImplementedError
+
+	def log_prob(self,values) :
+		raise NotImplementedError
+
+class Bernoulli(Distribution) :
+	def __init__(self, probs) :
+		self.probs = probs
+
+	def sample(self) :
+		return torch.bernoulli(self.probs)
+
+	def log_prob(self,values) :
+		log_pmf = ( torch.stack( [1-self.probs, self.probs] ) ).log()
+
+		return log_pmf.gather( 0, values.unsqueeze(0).long() ).squeeze(0)
+
+
 def conv( sin, sout,k,stride=2,pad=1,batchNorm=True) :
 	layers = []
 	layers.append( nn.Conv2d( sin,sout, k, stride,pad) )
@@ -147,18 +167,18 @@ def test_mnist():
 	iter_per_epoch = len(data_loader)
 
 	# Model :
-	z_dim = 12
+	z_dim = 20
 	img_dim = 28
 	img_depth=1
-	conv_dim = 32
+	conv_dim = 128
 	use_cuda = True#False
 	net_depth = 2
-	beta = 10.0
+	beta = 1.0
 	betavae = betaVAE(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	
 	# Optim :
 	lr = 1e-4
-	optimizer = torch.optim.Adam( vae.parameters(), lr=lr)
+	optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
 
 	# Debug :
 	# fixed inputs for debugging
@@ -189,7 +209,7 @@ def test_mnist():
 	fixed_x, _ = next(data_iter)
 	
 
-	path = 'layers{}-z{}-conv{}-lr{}'.format(net_depth,z_dim,conv_dim,lr)
+	path = 'beta{}-layers{}-z{}-conv{}-lr{}'.format(beta,net_depth,z_dim,conv_dim,lr)
 	if not os.path.exists( './beta-data/{}/'.format(path) ) :
 		os.mkdir('./beta-data/{}/'.format(path))
 	if not os.path.exists( './beta-data/{}/gen_images/'.format(path) ) :
@@ -222,25 +242,28 @@ def test_mnist():
 	        
 	        out, mu, log_var = betavae(images)
 	        
-	        
-	        # Compute reconstruction loss and kl divergence
-	        # For kl_divergence, see Appendix B in the paper or http://yunjey47.tistory.com/43
-	        
-
+	        # Compute :
+	        #reconstruction loss :
 	        reconst_loss = F.binary_cross_entropy(out, images, size_average=False)
-	        kl_divergence = torch.sum(0.5 * (mu**2 + torch.exp(log_var) - log_var -1))
+	        # expected log likelyhood :
+	        expected_log_lik = torch.sum( torch.sum( torch.sum( Bernoulli(out).log_prob(images), dim=1 ), dim=1), dim=1)
+	        # kl divergence :
+	        kl_divergence = torch.sum(0.5 * (mu**2 + torch.exp(log_var) - log_var -1), dim=1)
 	        
 	        # Backprop + Optimize
-	        total_loss = reconst_loss - betavae.beta*kl_divergence
+	        #total_loss = reconst_loss + betavae.beta*kl_divergence
+	        elbo = expected_log_lik - betavae.beta * kl_divergence
+	        total_loss = torch.sum( -elbo, dim=0)
+
 	        optimizer.zero_grad()
 	        total_loss.backward()
 	        optimizer.step()
 	        
 	        if i % 100 == 0:
 	            print ("Epoch[%d/%d], Step [%d/%d], Total Loss: %.4f, "
-	                   "Reconst Loss: %.4f, KL Div: %.7f" 
+	                   "Reconst Loss: %.4f, KL Div: %.7f, E[logp]: %.7f" 
 	                   %(epoch+1, 50, i+1, iter_per_epoch, total_loss.data[0], 
-	                     reconst_loss.data[0], kl_divergence.data[0]))
+	                     reconst_loss.data[0], kl_divergence.data[0],expected_log_lik.data[0]))
 	    
 	    
 
