@@ -57,6 +57,7 @@ class Decoder(nn.Module) :
 			self.dcs.append( deconv( ind, outd,k,stride=stride,pad=pad) )
 			self.dcs.append( nn.LeakyReLU(0.05) )
 			dim = k-2*pad + stride*(dim-1)
+			
 		self.dcs = nn.Sequential( *self.dcs) 
 			
 		ind = outd
@@ -77,6 +78,41 @@ class Decoder(nn.Module) :
 
 	def forward(self,z) :
 		return self.decode(z)
+
+
+
+class Decoder1(nn.Module) :
+	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3 ) :
+		super(Decoder1,self).__init__()
+		
+		self.net_depth = net_depth
+		self.img_dim = img_dim
+		self.img_depth = img_depth
+
+		ind = z_dim
+		self.fc1 = nn.Linear( ind, 1200)
+		self.fc2 = nn.Linear( 1200, 1200)
+		self.fc3 = nn.Linear( 1200, 1200)
+		self.fc4 = nn.Linear( 1200, img_dim**2)
+		
+
+	def decode(self, z) :
+		
+		out = z.view( z.size(0), z.size(1))
+		
+		out = F.relu( self.fc1(out) )
+		out = F.relu( self.fc2(out) )
+		out = F.relu( self.fc3(out) )
+		out = F.sigmoid( self.fc4(out))
+
+		out = out.view( (-1, self.img_depth, self.img_dim, self.img_dim))
+		
+		return out
+
+	def forward(self,z) :
+		return self.decode(z)
+
+
 
 class Encoder(nn.Module) :
 	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32 ) :
@@ -103,30 +139,131 @@ class Encoder(nn.Module) :
 			dim = (dim-k+2*pad)/stride +1
 		self.cvs = nn.Sequential( *self.cvs)
 
+		'''
 		ind = outd
 		outd = z_dim
+		outd = 64
 		outdim = 1
 		indim = dim
 		pad = 0
 		stride = 1
 		k = int(indim +2*pad -stride*(outdim-1))
 		self.fc = conv( ind, outd, k, stride=stride,pad=pad, batchNorm=False)
-		self.sig = nn.Sigmoid()
+		'''
+		self.fc = nn.Linear( 6272, 256)
+		self.fc1 = nn.Linear( 256, z_dim)
 
 	def encode(self, x) :
 		out = self.cvs(x)
-		out = self.sig( self.fc(out).squeeze() )
+		
+		out = out.view( (-1, self.num_features(out) ) )
+		#print(out.size() )
+		
+		out = F.relu( self.fc(out) )
+		out = F.relu( self.fc1(out) )
 		
 		return out
 
 	def forward(self,x) :
 		return self.encode(x)
 
+	def num_features(self, x) :
+		size = x.size()[1:]
+		# all dim except the batch dim...
+		num_features = 1
+		for s in size :
+			num_features *= s
+		return num_features
+
+
+
+class Encoder1(nn.Module) :
+	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32 ) :
+		super(Encoder1,self).__init__()
+		
+		self.net_depth = net_depth
+		
+		ind= img_depth*img_dim**2
+		self.fc = nn.Linear( ind, 1200)
+		self.fc1 = nn.Linear( 1200, 1200)
+		self.fc2 = nn.Linear( 1200, 1200)
+		self.fc3 = nn.Linear( 1200, z_dim)
+
+	def encode(self, x) :
+		
+		out = x.view( (-1, self.num_features(x) ))
+
+		out = F.relu( self.fc(out) )
+		out = F.relu( self.fc1(out) )
+		out = F.relu( self.fc2(out) )
+		out = F.relu( self.fc3(out) )
+		
+		return out
+
+	def forward(self,x) :
+		return self.encode(x)
+
+	def num_features(self, x) :
+		size = x.size()[1:]
+		# all dim except the batch dim...
+		num_features = 1
+		for s in size :
+			num_features *= s
+		return num_features
+
+
+class Encoder2(nn.Module) :
+	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32 ) :
+		super(Encoder2,self).__init__()
+		
+		self.net_depth = net_depth
+		
+		outd = conv_dim
+		ind= img_depth
+		k = 4
+		dim = img_dim
+		
+		pad = 0
+		stride = 2
+		
+		self.cv1 = conv( img_depth, conv_dim, k, batchNorm=False)
+		self.cv2 = conv( conv_dim, conv_dim, k,stride=stride,pad=pad)
+		self.cv3 = conv( conv_dim, conv_dim*2, k,stride=stride,pad=pad)
+		
+		self.fc = nn.Linear( 512, 256)
+		self.fc1 = nn.Linear( 256, z_dim)
+
+	def encode(self, x) :
+		
+		out = F.relu( self.cv1(x) )
+		out = F.relu( self.cv2(out) )
+		out = F.relu( self.cv3(out) )
+		
+		out = out.view( (-1, self.num_features(out) ) )
+		#print(out.size() )
+		
+		out = F.relu( self.fc(out) )
+		out = F.relu( self.fc1(out) )
+		
+		return out
+
+	def forward(self,x) :
+		return self.encode(x)
+
+	def num_features(self, x) :
+		size = x.size()[1:]
+		# all dim except the batch dim...
+		num_features = 1
+		for s in size :
+			num_features *= s
+		return num_features
+
+
 class betaVAE(nn.Module) :
 	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
 		super(betaVAE,self).__init__()
-		self.encoder = Encoder(net_depth=net_depth,img_dim=img_dim, img_depth=img_depth,conv_dim=conv_dim, z_dim=2*z_dim)
-		self.decoder = Decoder(net_depth=net_depth,img_dim=img_dim, img_depth=img_depth, conv_dim=conv_dim, z_dim=z_dim)
+		self.encoder = Encoder1(net_depth=net_depth,img_dim=img_dim, img_depth=img_depth,conv_dim=conv_dim, z_dim=2*z_dim)
+		self.decoder = Decoder1(net_depth=net_depth,img_dim=img_dim, img_depth=img_depth, conv_dim=conv_dim, z_dim=z_dim)
 
 		self.beta = beta
 		self.use_cuda = use_cuda
@@ -161,21 +298,22 @@ def test_mnist():
 
 	# Data loader
 	data_loader = torch.utils.data.DataLoader(dataset=dataset,
-    	                                      batch_size=100, 
+    	                                      batch_size=32, 
         	                                  shuffle=True)
 	data_iter = iter(data_loader)
 	iter_per_epoch = len(data_loader)
 
 	# Model :
-	z_dim = 20
+	z_dim = 100
 	img_dim = 28
 	img_depth=1
-	conv_dim = 128
+	conv_dim = 64
 	use_cuda = True#False
 	net_depth = 2
 	beta = 1.0
 	betavae = betaVAE(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
-	
+	print(betavae)
+
 	# Optim :
 	lr = 1e-4
 	optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
@@ -187,8 +325,8 @@ def test_mnist():
 		fixed_z = fixed_z.cuda()
 
 	var_z0 = torch.zeros(100, z_dim)
-	val = -0.5
-	step = 1.0/10.0
+	val = -1.0
+	step = 2.0/10.0
 	for i in range(10) :
 		var_z0[i,0] = val
 		var_z0[i+10,1] = val
@@ -222,7 +360,8 @@ def test_mnist():
 	if use_cuda :
 		fixed_x = fixed_x.cuda()
 
-	
+	out = torch.zeros((1,1))
+
 	for epoch in range(50):
 	    # Save the reconstructed images
 	    reconst_images, _, _ = betavae(fixed_x)
@@ -233,6 +372,8 @@ def test_mnist():
 	    gen_images = betavae.decoder(var_z0)
 	    gen_images = gen_images.view(-1, img_depth, img_dim, img_dim)
 	    torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/{}.png'.format(path,(epoch+1)) )
+
+	    #print(out)
 
 	    for i, (images, _) in enumerate(data_loader):
 	        
@@ -245,15 +386,18 @@ def test_mnist():
 	        # Compute :
 	        #reconstruction loss :
 	        reconst_loss = F.binary_cross_entropy(out, images, size_average=False)
+	        #reconst_loss = torch.mean( (out.view(-1) - images.view(-1))**2 )
+	        
 	        # expected log likelyhood :
-	        expected_log_lik = torch.sum( torch.sum( torch.sum( Bernoulli(out).log_prob(images), dim=1 ), dim=1), dim=1)
+	        expected_log_lik = torch.mean( Bernoulli( out.view((-1)) ).log_prob( images.view((-1)) ) )
 	        # kl divergence :
-	        kl_divergence = torch.sum(0.5 * (mu**2 + torch.exp(log_var) - log_var -1), dim=1)
+	        kl_divergence = 0.5 * torch.mean( torch.sum( (mu**2 + torch.exp(log_var) - log_var -1), dim=1) )
 	        
 	        # Backprop + Optimize
 	        #total_loss = reconst_loss + betavae.beta*kl_divergence
+	        #total_loss = reconst_loss
 	        elbo = expected_log_lik - betavae.beta * kl_divergence
-	        total_loss = torch.sum( -elbo, dim=0)
+	        total_loss = -elbo
 
 	        optimizer.zero_grad()
 	        total_loss.backward()
