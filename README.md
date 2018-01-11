@@ -9,10 +9,9 @@ This repository is an attempt at replicating some results presented in Irina Hig
 
 In order to use DeepMind's ["dSprites - Disentanglement testing Sprites dataset"](https://github.com/deepmind/dsprites-dataset), you need to clone their repository and place it at the root of this one.
 
-'''
+```
 git clone https://github.com/deepmind/dsprites-dataset.git
-'''
-
+```
 ## Disclaimers
 
 The datasets that have been used and experienced with are :
