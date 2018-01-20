@@ -474,19 +474,19 @@ def test_dSprite():
 	betavae = betaVAEdSprite(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	'''
 	# Model :
-	z_dim = 12
+	z_dim = 10
 	img_dim = size
 	img_depth=1
 	conv_dim = 32
 	use_cuda = True#False
 	net_depth = 3
-	beta = 5e0
+	beta = 4e0
 	betavae = betaVAE(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	print(betavae)
 
 
 	# Optim :
-	lr = 1e-3
+	lr = 1e-5
 	optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
 	#optimizer = torch.optim.Adagrad( betavae.parameters(), lr=lr)
 	#lr = 1e-3
@@ -501,7 +501,7 @@ def test_dSprite():
 	
 
 	#path = 'dSprite--beta{}-layers{}-z{}-conv{}-lr{}'.format(beta,net_depth,z_dim,conv_dim,lr)
-	path = 'test--dSprite--beta{}-layers{}-z{}-conv{}'.format(beta,net_depth,z_dim,conv_dim)
+	path = 'testAblation--dSprite--beta{}-layers{}-z{}-conv{}'.format(beta,net_depth,z_dim,conv_dim)
 	if not os.path.exists( './beta-data/{}/'.format(path) ) :
 		os.mkdir('./beta-data/{}/'.format(path))
 	if not os.path.exists( './beta-data/{}/gen_images/'.format(path) ) :
@@ -561,12 +561,10 @@ def test_dSprite():
 
 			gen_images_latent = betavae.decoder(var_z0)
 			gen_images_latent = gen_images_latent.view(-1, img_depth, img_dim, img_dim).cpu().data
-			gen_images_latent_sample = Bernoulli( gen_images_latent ).sample()
-			ri = torch.cat( [gen_images_latent, gen_images_latent_sample], dim=0)
-			gen_images = torch.cat( [gen_images,ri], dim=0)
+			gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
 
 		#torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/dim{}/{}.png'.format(path,latent,(epoch+1)) )
-		torchvision.utils.save_image(255.0*gen_images,'./beta-data/{}/gen_images/{}.png'.format(path,(epoch+1)) )
+		torchvision.utils.save_image(255.0*gen_images,'./beta-data/{}/gen_images/{}.png'.format(path,(epoch+32)) )
 
 		mu_mean = 0.0
 		sigma_mean = 0.0
@@ -579,10 +577,9 @@ def test_dSprite():
 			if i % 100 == 0 :
 				reconst_images, _, _ = betavae(fixed_x)
 				reconst_images = reconst_images.view(-1, img_depth, img_dim, img_dim).cpu().data
-				reconst_images_sample = Bernoulli( reconst_images ).sample()
-				print(reconst_images_sample.min(),reconst_images_sample.max(),reconst_images_sample.mean())
-				ri = torch.cat( [fixed_x.cpu().data,reconst_images, reconst_images_sample], dim=0)
-				torchvision.utils.save_image(255*ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+1)) )
+				orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
+				ri = torch.cat( [orimg, reconst_images], dim=2)
+				torchvision.utils.save_image(255*ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+32)) )
 			
 			
 			images = Variable( (images.view(-1,1,img_dim, img_dim) ) )
@@ -591,24 +588,17 @@ def test_dSprite():
 				images = images.cuda() 
 
 			out, mu, log_var = betavae(images)
-			#out_logits = betavae.decoder.out_logits
-
+			
 			mu_mean += torch.mean(mu.data,dim=0)
 			sigma_mean += torch.mean( torch.sqrt( torch.exp(log_var.data) ), dim=0 )
 
 			# Compute :
 			#reconstruction loss :
-			#print(out.size(),images.size())
-			#print(out.mean(),out.min(),out.max(),images.mean(),images.min(),images.max())
-			#raise
-			
 			reconst_loss = F.binary_cross_entropy( out, images, size_average=False)
 			#reconst_loss = nn.MultiLabelSoftMarginLoss()(input=out_logits, target=images)
 			#reconst_loss = F.binary_cross_entropy_with_logits( input=out, target=images, size_average=False)
 			#reconst_loss = F.binary_cross_entropy( Bernoulli(out).sample(), images, size_average=False)
 			#reconst_loss = torch.mean( (out.view(-1) - images.view(-1))**2 )
-			
-			out1 = out.cpu().data.numpy()
 			
 			# expected log likelyhood :
 			expected_log_lik = torch.mean( Bernoulli( out.view((-1)) ).log_prob( images.view((-1)) ) )
@@ -620,7 +610,6 @@ def test_dSprite():
 
 			# ELBO :
 			elbo = expected_log_lik - betavae.beta * kl_divergence
-			#elbo = expected_log_lik #- betavae.beta * kl_divergence
 			
 			# TOTAL LOSS :
 			total_loss = reconst_loss + betavae.beta*kl_divergence
@@ -632,6 +621,8 @@ def test_dSprite():
 			total_loss.backward()
 			optimizer.step()
 
+			del images
+			
 			epoch_loss += total_loss.cpu().data[0]
 
 			if i % 100 == 0:
