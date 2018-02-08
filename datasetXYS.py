@@ -1,0 +1,303 @@
+import xml.etree.ElementTree as ET
+import numpy as np
+import os 
+import copy
+
+import torch
+from torchvision import transforms
+from torch.utils.data import Dataset
+
+import cv2
+
+
+class RandomRecolorNormalize(object) :
+	def __init__(self,sizew=224,sizeh=224) :
+		self.sizeh = sizeh
+		self.sizew = sizew
+
+	def __call__(self,sample) :
+		img, gaze = sample['image'], sample['gaze']
+		h,w,c = img.shape
+
+		
+		#recolor :
+		t = [np.random.uniform()]
+		t += [np.random.uniform()]
+		t += [np.random.uniform()]
+		t = np.array(t)
+
+		img = img * (1+t)
+
+		# Normalize color between 0 and 1 :
+		img = img / (255.0*1.0)
+
+		# Normalize the size of the image :
+		#img = cv2.resize(img, (self.sizeh,self.sizew))
+
+		return {'image':img, 'gaze':gaze}
+
+
+class data2loc(object) :
+	def __call__(self,sample) :
+		img, gaze = sample['image'], sample['gaze']
+		h,w,c = img.shape
+
+		outputs = np.zeros((1,2))
+
+		outputs[0,0] = gaze['x']
+		outputs[0,1] = gaze['y']
+				
+			
+		return {'image':img, 'outputs':outputs}
+
+
+class ToTensor(object) :
+	def __call__(self, sample) :
+		image, outputs = sample['image'], sample['outputs']
+		#swap color axis :
+		# numpy : H x W x C
+		# torch : C x H x W
+		image = image.transpose( (2,0,1) )
+		return {'image':torch.from_numpy(image), 'landmarks':torch.from_numpy(outputs) }
+
+Transform = transforms.Compose([
+							data2loc(),
+							ToTensor()
+							])
+
+TransformPlus = transforms.Compose([
+							RandomRecolorNormalize(),
+							data2loc(),
+							ToTensor()
+							])
+
+
+def parse_annotation_GazeRecognition(ann_dir) :
+	imgs = []
+
+	for ann in os.listdir(ann_dir) :
+		img = {}
+
+		tree = ET.parse(os.path.join(ann_dir,ann) )
+
+
+		for elem in tree.iter() :
+			if 'filename' in elem.tag :
+				imgs += [img]
+				img['filename'] = elem.text
+
+			if 'width' in elem.tag :
+				img['width'] = int(float(elem.text))
+			if 'height' in elem.tag :
+				img['height'] = int(float(elem.text))
+			
+			if 'data' in elem.tag:
+				data = {}
+				img['data'] = data
+				
+				for attr in list(elem) :
+					if 'model' in attr.tag :
+						data['model'] = attr.text
+					if 'gaze_position' in attr.tag :
+						gaze = {}
+						data['gaze'] = gaze
+						
+						for attri in list(attr) :
+							if 'x' in attri.tag :
+								gaze['x'] = float(attri.text)
+							if 'y' in attri.tag :
+								gaze['y'] = float(attri.text)
+					if 'screen_size' in attr.tag :
+						screen = {}
+						data['screen'] = screen
+						
+						for attri in list(attr) :
+							if 'width' in attri.tag :
+								screen['width'] = float(attri.text)
+							if 'height' in attri.tag :
+								screen['height'] = float(attri.text)
+					if 'camera_screen' in attr.tag :
+						cam_screen = {}
+						data['camera_screen_center_offset'] = cam_screen
+						
+						for attri in list(attr) :
+							if 'x' in attri.tag :
+								cam_screen['x'] = float(attri.text)
+							if 'y' in attri.tag :
+								cam_screen['y'] = float(attri.text)
+						
+					
+	return imgs
+
+
+
+class DatasetGazeRecognition(Dataset) :
+	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=TransformPlus):
+		super(DatasetGazeRecognition,self).__init__()
+		self.img_dir = img_dir
+		self.ann_dir = ann_dir
+
+		self.w = width
+		self.h = height
+
+		self.parsedAnnotations = parse_annotation_GazeRecognition(self.ann_dir)
+
+		self.transform = transform
+		#default transformations :
+		# ...
+		# -2 : data2loc : transform the data list of dictionnaries into usable numpy outputs  
+		# -1 : ToTensor
+
+	def __len__(self) :
+		return len(self.parsedAnnotations)
+
+	def __getitem__(self,idx) :
+		path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
+		img = cv2.imread(path)
+		img = np.ascontiguousarray(img)
+		h,w,c = img.shape 
+		img = cv2.resize( img, (self.h, self.w) )
+
+		gaze = copy.deepcopy(self.parsedAnnotations[idx]['data']['gaze'])
+		cam_screen_offset = copy.deepcopy(self.parsedAnnotations[idx]['data']['camera_screen_center_offset'])
+		for el in ['x','y'] :
+			gaze[el] += cam_screen_offset[el]
+
+		sample = {'image':img, 'gaze':gaze}
+
+		if self.transform is not None :
+			sample = self.transform(sample)
+
+		return sample
+
+	def generateVisualization(self, idx, shape=None, ratio=30, screen_size=[0.12,0.05],estimation=[0.02,0.02], cm_prec=0.02) :
+		idx = int(idx)
+		try :
+			path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
+			img = cv2.imread(path)
+			img = np.ascontiguousarray(img)
+			
+			gaze = copy.deepcopy(self.parsedAnnotations[idx]['data']['gaze'])
+			cam_screen_offset = copy.deepcopy(self.parsedAnnotations[idx]['data']['camera_screen_center_offset'])
+			for el in ['x','y'] :
+				gaze[el] += cam_screen_offset[el]
+
+			if shape is None :
+				shape = list(img.shape)
+			else :
+				img = cv2.resize( img, shape)
+
+			h,w,d = img.shape
+			img = cv2.resize( img, (self.h, self.w) )
+			# create visualization :
+			visualization = 255*np.ones( (480,640,3), dtype=np.float32 )
+			ratio = 640/(2*screen_size[1]*100)
+			px_screen_size = np.array(screen_size) * 100 * ratio
+			cam_offset = [-0.01,0.01]
+			px_cam_offset = np.array(cam_offset) * 100 * ratio
+			def draw_screen_cam(image,px_screen_size, px_cam_offset) :
+				shape = np.array(image.shape)[0:2]
+				offset = 10
+				px_screen_offset = (shape - px_screen_size )/ 2
+				pt1 = px_screen_offset
+				pt2 = pt1+px_screen_size
+				color = (0,0,0)
+
+				pt1_t = (int(pt1[1])+offset,int(pt1[0]))
+				pt2_t = (int(pt2[1])+offset,int(pt2[0]))
+				cv2.rectangle(image, pt1_t, pt2_t, color=color, thickness=3)
+				
+				pt3 = pt1+px_cam_offset
+				pt3_t = (int(pt3[1])+offset,int(pt3[0]))
+				cv2.circle(image, pt3_t, radius=10, color=color, thickness=3)
+				
+				return image, pt3
+			visualization, px_cam_pt = draw_screen_cam(visualization,px_screen_size,px_cam_offset)
+
+			px_pt = np.array([ gaze['y'], gaze['x'] ]) * 100 * ratio
+			px_estimation_pt = np.array(estimation) * 100 * ratio
+
+			prec = int(cm_prec * 100 * ratio) 
+			# 2 centimeter precision
+			def draw_point(image,px_pt,prec,px_cam_pt,color=(255,255,255)) :
+				pt = px_cam_pt+px_pt
+				pt_t = ( int(pt[1]), int(pt[0]) )
+				cv2.circle(image, pt_t, radius=prec, color=color, thickness=2)
+				return image
+			color_true = (0,255,0)
+			visualization = draw_point(visualization,px_pt=px_pt,prec=4,px_cam_pt=px_cam_pt,color=color_true)
+			color_est = (255,255,0)
+			visualization = draw_point(visualization,px_pt=px_estimation_pt,prec=prec,px_cam_pt=px_cam_pt,color=color_est)
+
+		except Exception as e :
+			print(e)
+			
+		#if self.transform is not None :
+		#	image = self.transform(image)
+		#image = np.concatenate([image,visualization], axis=1)
+		
+		sample = {'image': img, 'visualization':visualization, 'gaze':gaze }
+		
+		return sample
+
+
+def test_dataset_visualization() :
+	ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
+	img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
+	width = 448
+	height = 448
+	transform = TransformPlus
+
+	dataset = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform)
+
+	i=0
+	continuer = True
+	screen_size = [0.20,0.20]
+	while continuer :
+		sample = dataset.generateVisualization(idx=0+i,screen_size=screen_size)
+
+		cv2.imshow('image', sample['image'] )
+		cv2.imshow('screen', sample['visualization'] )
+		
+		while True :
+			key = cv2.waitKey()
+			if key == ord('n'):
+				i+=1
+				break
+			if key == ord('q'):
+				continuer = False
+				break
+
+
+def load_dataset_Gaze() :
+	train_ann_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/annotations'
+	train_img_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/images'
+	test_ann_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/annotations'
+	test_img_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/images'
+	width = 224
+	height = 224
+	transform = TransformPlus
+
+	datasets = {'train': DatasetGazeRecognition(img_dir=train_img_dir,ann_dir=train_ann_dir,width=width,height=height,transform=transform),
+						'val': DatasetGazeRecognition(img_dir=test_img_dir,ann_dir=test_ann_dir,width=width,height=height,transform=transform),}
+	
+	return datasets
+
+
+def load_dataset_XYS(img_dim=224) :
+	train_ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
+	train_img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
+	test_ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
+	test_img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = TransformPlus
+
+	datasets = {'train': DatasetGazeRecognition(img_dir=train_img_dir,ann_dir=train_ann_dir,width=width,height=height,transform=transform),
+						'val': DatasetGazeRecognition(img_dir=test_img_dir,ann_dir=test_ann_dir,width=width,height=height,transform=transform)}
+	
+	return datasets
+
+if __name__ == '__main__' :
+	#test_dataset()
+	test_dataset_visualization()
