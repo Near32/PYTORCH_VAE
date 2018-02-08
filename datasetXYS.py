@@ -58,7 +58,7 @@ class ToTensor(object) :
 		# numpy : H x W x C
 		# torch : C x H x W
 		image = image.transpose( (2,0,1) )
-		return {'image':torch.from_numpy(image), 'landmarks':torch.from_numpy(outputs) }
+		return {'image':torch.from_numpy(image/255.0), 'landmarks':torch.from_numpy(outputs) }
 
 Transform = transforms.Compose([
 							data2loc(),
@@ -125,6 +125,14 @@ def parse_annotation_GazeRecognition(ann_dir) :
 								cam_screen['x'] = float(attri.text)
 							if 'y' in attri.tag :
 								cam_screen['y'] = float(attri.text)
+					if 'head' in attr.tag :
+						head = {}
+						data['head'] = head
+
+						for attri in list(attr) :
+							if 'head_camera_distance' in attri.tag :
+								head['head_camera_distance'] = float(attri.text)
+
 						
 					
 	return imgs
@@ -269,35 +277,82 @@ def test_dataset_visualization() :
 				break
 
 
-def load_dataset_Gaze() :
-	train_ann_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/annotations'
-	train_img_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/images'
-	test_ann_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/annotations'
-	test_img_dir = '/home/kevin/Development/git/PYTORCH/TUTORIALS/GazeRecognition/datasets/dataset1/images'
-	width = 224
-	height = 224
-	transform = TransformPlus
-
-	datasets = {'train': DatasetGazeRecognition(img_dir=train_img_dir,ann_dir=train_ann_dir,width=width,height=height,transform=transform),
-						'val': DatasetGazeRecognition(img_dir=test_img_dir,ann_dir=test_ann_dir,width=width,height=height,transform=transform),}
-	
-	return datasets
-
-
 def load_dataset_XYS(img_dim=224) :
-	train_ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
-	train_img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
-	test_ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
-	test_img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
+	ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
+	img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
 	width = img_dim
 	height = img_dim
-	transform = TransformPlus
+	transform = Transform #TransformPlus
 
-	datasets = {'train': DatasetGazeRecognition(img_dir=train_img_dir,ann_dir=train_ann_dir,width=width,height=height,transform=transform),
-						'val': DatasetGazeRecognition(img_dir=test_img_dir,ann_dir=test_ann_dir,width=width,height=height,transform=transform)}
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform)
 	
 	return datasets
+
+
+def generateIDX(dataset) :
+	from math import floor
+	nbrel = len(dataset.parsedAnnotations)
+	gazex = [ round(dataset.parsedAnnotations[i]['data']['gaze']['x'], 3) for i in range(nbrel)  ]
+	setgx = set(gazex)
+	idx_gaze_x = [ [ idx for idx in range(nbrel) if gazex[idx] == gx] for gx in setgx]
+
+	gazey = [  dataset.parsedAnnotations[i]['data']['gaze']['y'] for i in range(nbrel)  ]
+	setgy = set(gazey)
+	#print( len(setgy) )
+	'''
+	prec = 1e2
+	gazeyf = [ floor( dataset.parsedAnnotations[i]['data']['gaze']['y']*prec)/prec for i in range(nbrel)  ]
+	'''
+	nbrval = 10
+	limit = 0.349
+	step = limit/nbrval
+	ceil_vals = []
+	val = 0.0
+	for i in range(nbrval+1) :
+		val += step
+		ceil_vals.append( val)
+	#print(ceil_vals)
+	#print(len(ceil_vals))
+
+	idx_gaze_y = list()
+	for i in range(nbrval+1) :
+		idx_gaze_y.append( list() )
+	
+	for i in range(len(gazey) ) :
+		idx_ceil = 0 
+		while ceil_vals[idx_ceil] <= gazey[i] :
+			idx_ceil += 1
+		idx_gaze_y[idx_ceil].append( i)
+
+	'''
+	print(idx_gaze_y[0])
+	for i in range(nbrval) :
+		print( len(idx_gaze_y[i]) ) 	
+	'''
+	'''
+	for i in idx_gaze_y[0] :
+		print( ' idx: {}  ::  {} >= {}'.format( i, ceil_vals[0], gazey[ i ]) )	
+	'''
+
+	headd = [ dataset.parsedAnnotations[i]['data']['head']['head_camera_distance'] for i in range(nbrel)  ]
+	sethdd = set(headd)
+	#print( len(sethdd) )
+	#print(sethdd)
+	idx_head_distance = [ [ idx for idx in range(nbrel) if headd[idx] == hdd] for hdd in sethdd]
+
+	return idx_gaze_x, idx_gaze_y[0:10], idx_head_distance
+
+
+def test() :
+	dataset = load_dataset_XYS(img_dim=128)
+	idxgx, idxgy, idxhead = generateIDX(dataset)
+
+	print( len(idxgx) )
+	print( len(idxgy) )
+	print( len(idxhead) )
+
 
 if __name__ == '__main__' :
 	#test_dataset()
-	test_dataset_visualization()
+	#test_dataset_visualization()
+	test()

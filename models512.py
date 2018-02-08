@@ -267,38 +267,39 @@ class DecoderXYS(nn.Module) :
 	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3 ) :
 		super(DecoderXYS,self).__init__()
 		
-		self.net_depth = net_depth
-		self.dcs = []
-		outd = conv_dim*(2**self.net_depth)
-		ind= z_dim
-		k = 6#4
-		dim = k
-		pad = 1
-		stride = 2
-		self.fc = deconv( ind, outd, k, stride=1, pad=0, batchNorm=False)
-		
-		for i in reversed(range(self.net_depth)) :
-			ind = outd
-			outd = 32#conv_dim*(2**i)
-			self.dcs.append( deconv( ind, outd,k,stride=stride,pad=pad) )
-			self.dcs.append( nn.LeakyReLU(0.05) )
-			dim = k-2*pad + stride*(dim-1)
-		self.dcs = nn.Sequential( *self.dcs) 
-			
-		ind = outd
+		self.z_dim = z_dim
 		self.img_depth=img_depth
-		outd = self.img_depth
-		outdim = img_dim
-		indim = dim
-		pad = 0
+		self.img_dim = img_dim
+
+		stride = 2 
+		pad = 1
+		
+		self.fc = deconv( self.z_dim, 512, 32, stride=1, pad=0, batchNorm=False)
+		
+		self.dcs = []
+		
+		self.dcs.append( deconv( 512, 256, 4,stride=stride,pad=pad) )
+		self.dcs.append( nn.LeakyReLU(0.05) )
+		
+		self.dcs.append( deconv( 256, 128, 4,stride=stride,pad=pad) )
+		self.dcs.append( nn.LeakyReLU(0.05) )
+		
+		self.dcs.append( deconv( 128, 64, 4,stride=stride,pad=pad) )
+		self.dcs.append( nn.LeakyReLU(0.05) )
+		
+		self.dcs.append( deconv( 64, 32, 4,stride=stride,pad=pad) )
+		self.dcs.append( nn.LeakyReLU(0.05) )
+		
+		self.dcs = nn.Sequential( *self.dcs) 
+		
 		stride = 1
-		k = outdim +2*pad -stride*(indim-1)
-		self.dcout = deconv( ind, outd, k, stride=stride, pad=pad, batchNorm=False)
+		pad = 0	
+		self.dcout = deconv( 32, self.img_depth, 1, stride=stride, pad=pad, batchNorm=False)
 		
 	def decode(self, z) :
 		z = z.view( z.size(0), z.size(1), 1, 1)
 		out = F.leaky_relu( self.fc(z), 0.05)
-		out = F.leaky_relu( self.dcs(out), 0.05)
+		out = self.dcs(out)
 		out = F.sigmoid( self.dcout(out))
 		return out
 
@@ -309,43 +310,34 @@ class EncoderXYS(nn.Module) :
 	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32 ) :
 		super(EncoderXYS,self).__init__()
 		
-		self.net_depth = net_depth
-		self.cvs = []
-		outd = conv_dim
-		ind= img_depth
-		k = 6#4
-		dim = img_dim
+		self.z_dim = z_dim
+		self.img_depth=img_depth
+		self.img_dim = img_dim
+
+		stride = 2 
 		pad = 1
-		stride = 2
+
 		self.cvs = []
-		self.cvs.append( conv( img_depth, conv_dim, 4, batchNorm=False))
-		self.cvs.append( nn.LeakyReLU(0.05) )
-		dim = (dim-k+2*pad)/stride +1
-
-		for i in range(1,self.net_depth,1) :
-			ind = outd
-			outd = 32#conv_dim*(2**i)
-			self.cvs.append( conv( ind, outd,k,stride=stride,pad=pad) )
-			self.cvs.append( nn.LeakyReLU(0.05) )
-			dim = (dim-k+2*pad)/stride +1
-		self.cvs = nn.Sequential( *self.cvs)
-
-		ind = outd
-		outd = 64
-		outdim = 1
-		indim = dim
-		pad = 0
-		stride = 1
-		#k = int(indim +2*pad -stride*(outdim-1))
-		k=4
 		
-		#self.fc = conv( ind, outd, k, stride=stride,pad=pad, batchNorm=False)
-		# net_depth = 5 :
-		#self.fc = nn.Linear( 25088, 2048)
-		# net_depth = 3 img dim 224 : net_deph = 5 img dim 128
-		#self.fc = nn.Linear( 8192, 2048)
-		# net_depth 5 img_dim 256 k=6 :
-		self.fc = nn.Linear( 1152, 2048)
+		self.cvs.append( conv( self.img_depth, 32, 4,stride=stride,pad=pad) )
+		self.cvs.append( nn.LeakyReLU(0.05) )
+		
+		self.cvs.append( deconv(  32, 64, 4,stride=stride,pad=pad) )
+		self.cvs.append( nn.LeakyReLU(0.05) )
+		
+		self.cvs.append( deconv( 64, 128, 4,stride=stride,pad=pad) )
+		self.cvs.append( nn.LeakyReLU(0.05) )
+		
+		self.cvs.append( deconv( 128, 256, 4,stride=stride,pad=pad) )
+		self.cvs.append( nn.LeakyReLU(0.05) )
+		
+		self.cvs.append( deconv( 256, 512, 4,stride=stride,pad=pad) )
+		self.cvs.append( nn.LeakyReLU(0.05) )
+		
+		self.cvs = nn.Sequential( *self.cvs) 
+		
+		self.fc = deconv( 512, 1, 4, stride=1, pad=0, batchNorm=False)
+		
 		self.fc1 = nn.Linear( 2048, 1024)
 		self.fc2 = nn.Linear( 1024, z_dim)
 		
@@ -353,7 +345,7 @@ class EncoderXYS(nn.Module) :
 		out = self.cvs(x)
 
 		out = out.view( (-1, self.num_features(out) ) )
-		#print(out.size() )
+		print(out.size() )
 
 		out = F.leaky_relu( self.fc(out), 0.05 )
 		out = F.leaky_relu( self.fc1(out), 0.05 )
