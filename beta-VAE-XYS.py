@@ -18,7 +18,7 @@ from datasetXYS import load_dataset_XYS
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32):	
+def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):	
 	size = 256
 	dataset = load_dataset_XYS(img_dim=size)
 
@@ -67,7 +67,10 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32):
 	if train :
 		train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=nbr_epoch,batch_size=batch_size,offset=offset)
 	else :
-		query_XYS(betavae, data_loader,path)
+		if evaluate :
+			evaluate_disentanglement(betavae, dataset, nbr_epoch=nbr_epoch)
+		else :
+			query_XYS(betavae, data_loader,path)
 
 
 
@@ -283,10 +286,146 @@ def query_XYS(betavae,data_loader,path):
 	torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/query.png'.format(path ) )
 	
 
+def generateTarget(latent_dim=3,idx_latent=0, batch_size=8 ) :
+	target = torch.zeros( (1, latent_dim))
+	target[0,idx_latent] = 1.0
+	target = torch.cat( batch_size*[target], dim=0)
+
+	target = Variable(target)
+	global use_cuda 
+	if use_cuda :
+		target = target.cuda()
+
+	return target
+
+def generatePairs(index) :
+	nbrel = len(index)
+	
+	# if not even :
+	if nbrel % 2 :
+		nbrel -= 1
+		print('NBR ELEMENT : {}'.format(nbrel) )
+		# ditch the last one...
+
+	id1 = []
+	id2 = []
+
+	for i in range( int(nbrel/2) ) :
+		id1.append( i )
+		id2.append( i*2)
+
+	return id1, id2
+
+def evaluate_disentanglement(model,dataset,nbr_epoch=20) :
+	from datasetXYS import generateIDX, generateClassifier
+
+	global use_cuda
+	lr = 1e-4
+	
+	indexes = generateIDX(dataset)
+	nbr_latent = len(indexes)
+	disentanglement_measure = [0.0] * nbr_latent 
+
+	classifier = generateClassifier(input_dim=model.z_dim, output_dim=nbr_latent)
+	if use_cuda :
+		classifier = classifier.cuda()
+
+	optimizer = torch.optim.Adam( classifier.parameters(), lr=lr)
+
+	batch_size = 1
+	iteration_training = 0
+	cum_training_acc = 0.0
+
+	for phase in ['train','val'] :
+		if phase == 'val' :
+			nbrepoch = 1
+		else :
+			nbrepoch = nbr_epoch
+
+		for epoch in range(nbrepoch) :
+			cum_epoch_acc = 0.0
+			iteration_epoch = 0
+
+			for idx_latent in range(3) :
+				index = indexes[idx_latent]
+				
+				nbr_classes = len(index)
+				iteration_latent = 0
+				cum_latent_acc = 0.0
+
+				for cl in range(nbr_classes) :
+					index1, index2 = generatePairs(index[cl])
+					nbrel = len(index1)
+					
+					print('')
+					#print('IDX LATENT : {} // NBR ELEMENT : {}'.format(idx_latent,nbrel))				
+					
+					for it in range(nbrel) :
+						sample1 = dataset[index1[it]]
+						img1 = sample1['image'].unsqueeze(0)
+						sample2 = dataset[index2[it]]
+						img2 = sample2['image'].unsqueeze(0)
+
+
+						#img1 = Variable( (img1.view(-1, model.img_depth, model.img_dim, model.img_dim) ) ).float()
+						#img2 = Variable( (img2.view(-1, model.img_depth, model.img_dim, model.img_dim) ) ).float()
+						img1 = Variable( img1 ).float()
+						img2 = Variable( img2 ).float()
+						
+						if use_cuda :
+							img1 = img1.cuda() 
+							img2 = img2.cuda() 
+
+
+						_, mu1, log_var1 = model(img1)
+						_, mu2, log_var2 = model(img2)
+						
+						z_diff = torch.abs(mu2-mu1)
+						#av_z_diff = z_diff/float(nbrel)
+
+						target = generateTarget(latent_dim=3, idx_latent=idx_latent, batch_size=1)
+
+						#logits = classifier(av_z_diff)
+						logits = classifier(z_diff)
+
+
+						# Accuracy :
+						acc = (logits.cpu().data.max(1)[1] == idx_latent)
+						acc = acc.numpy().mean()*100.0
+						cum_latent_acc = (cum_latent_acc*iteration_latent + acc)/(iteration_latent+1)
+						iteration_latent += 1
+						cum_epoch_acc = (cum_epoch_acc*iteration_epoch + acc)/(iteration_epoch+1)
+						iteration_epoch += 1
+						cum_training_acc = (cum_training_acc*iteration_training + acc)/(iteration_training+1)
+						iteration_training += 1
+
+						print('{} EPOCH : {} :: iteration {}/{} :: Cumulative Accuracy : {} // Cumulative Latent {} Accuracy : {}'.format(phase, epoch, it, nbrel, cum_epoch_acc, idx_latent, cum_latent_acc), end='\r')
+
+
+						# Loss :
+						loss = F.binary_cross_entropy( logits, target)
+						
+						if phase == 'train' :
+							# Training :
+							loss.backward()
+							
+							if iteration_latent % batch_size == 0 :
+								optimizer.step()
+								optimizer.zero_grad()
+
+			print('')
+			print('-'*20)
+			print('{} EPOCH : {}/{} :: Cumulative Accuracy : {} // Cumulative Latent {} Accuracy : {}'.format(phase, epoch, nbrepoch, cum_epoch_acc, idx_latent, cum_latent_acc))
+			print('-'*20)
+		
+
+
 if __name__ == '__main__' :
 	import argparse
 	parser = argparse.ArgumentParser(description='beta-VAE')
 	parser.add_argument('--train',action='store_true',default=False)
+	parser.add_argument('--query',action='store_true',default=False)
+	parser.add_argument('--evaluate',action='store_true',default=False)
 	parser.add_argument('--offset', type=int, default=0)
 	parser.add_argument('--batch', type=int, default=32)
 	parser.add_argument('--epoch', type=int, default=100)
@@ -294,5 +433,9 @@ if __name__ == '__main__' :
 
 	if args.train :
 		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch)
-	else :
+	
+	if args.query :
 		setting(train=False)
+
+	if args.evaluate :
+		setting(train=False,evaluate=True,nbr_epoch=args.epoch)

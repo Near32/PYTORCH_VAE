@@ -4,6 +4,8 @@ import os
 import copy
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import transforms
 from torch.utils.data import Dataset
 
@@ -249,6 +251,23 @@ class DatasetGazeRecognition(Dataset) :
 		return sample
 
 
+class LinearClassifier(nn.Module) :
+	def __init__(self, input_dim=10, output_dim=3) :
+		super(LinearClassifier,self).__init__()
+
+		self.input_dim = input_dim
+		self.output_dim = output_dim
+
+		self.fc = nn.Linear(self.input_dim,self.output_dim)
+
+	def forward(self,x) :
+		out = self.fc(x)
+		soft_out = F.softmax(out)
+
+		return soft_out
+
+
+
 def test_dataset_visualization() :
 	ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
 	img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
@@ -341,6 +360,10 @@ def generateIDX(dataset) :
 	idx_head_distance = [ [ idx for idx in range(nbrel) if headd[idx] == hdd] for hdd in sethdd]
 
 	return idx_gaze_x, idx_gaze_y[0:10], idx_head_distance
+
+
+def generateClassifier(input_dim=10,output_dim=3) :
+	return LinearClassifier(input_dim=input_dim,output_dim=output_dim)
 
 
 def test() :
