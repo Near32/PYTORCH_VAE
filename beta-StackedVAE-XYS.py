@@ -18,9 +18,9 @@ from datasetXYS import load_dataset_XYS
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):	
+def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False):	
 	size = 256
-	dataset = load_dataset_XYS(img_dim=size)
+	dataset = load_dataset_XYS(img_dim=size,stacking=stacking)
 
 	# Data loader
 	data_loader = torch.utils.data.DataLoader(dataset=dataset,
@@ -47,6 +47,9 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
 		
 
 	path = 'test--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	if stacking :
+		path+= '-stacked'
+	
 	if not os.path.exists( './beta-data/{}/'.format(path) ) :
 		os.mkdir('./beta-data/{}/'.format(path))
 	if not os.path.exists( './beta-data/{}/gen_images/'.format(path) ) :
@@ -427,16 +430,17 @@ if __name__ == '__main__' :
 	parser.add_argument('--train',action='store_true',default=False)
 	parser.add_argument('--query',action='store_true',default=False)
 	parser.add_argument('--evaluate',action='store_true',default=False)
+	parser.add_argument('--stacking',action='store_true',default=False)
 	parser.add_argument('--offset', type=int, default=0)
 	parser.add_argument('--batch', type=int, default=32)
 	parser.add_argument('--epoch', type=int, default=100)
 	args = parser.parse_args()
 
 	if args.train :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch)
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacking)
 	
 	if args.query :
-		setting(train=False)
+		setting(train=False,stacking=args.stacking)
 
 	if args.evaluate :
-		setting(train=False,evaluate=True,nbr_epoch=args.epoch)
+		setting(train=False,evaluate=True,nbr_epoch=args.epoch,stacking=args.stacking)

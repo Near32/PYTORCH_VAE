@@ -135,6 +135,27 @@ def parse_annotation_GazeRecognition(ann_dir) :
 							if 'head_camera_distance' in attri.tag :
 								head['head_camera_distance'] = float(attri.text)
 
+			if 'object' in elem.tag:
+				name = None
+				bndbox = [0,0,0,0]
+
+				for attr in list(elem) :
+					if 'name' in attr.tag :
+						name = attr.text
+					if 'bndbox' in attr.tag :
+						for attri in list(attr) :
+							if 'xmin' in attri.tag :
+								bndbox[0] = float(attri.text)
+							if 'ymin' in attri.tag :
+								bndbox[1] = float(attri.text)
+							if 'xmax' in attri.tag :
+								bndbox[2] = float(attri.text)
+							if 'ymax' in attri.tag :
+								bndbox[3] = float(attri.text)
+				
+				if name is not None :
+					img[name] = bndbox
+				
 						
 					
 	return imgs
@@ -142,10 +163,12 @@ def parse_annotation_GazeRecognition(ann_dir) :
 
 
 class DatasetGazeRecognition(Dataset) :
-	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=TransformPlus):
+	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=TransformPlus,stacking=False,divide2=False):
 		super(DatasetGazeRecognition,self).__init__()
 		self.img_dir = img_dir
 		self.ann_dir = ann_dir
+		self.stacking = stacking
+		self.divide2 = divide2
 
 		self.w = width
 		self.h = height
@@ -164,8 +187,50 @@ class DatasetGazeRecognition(Dataset) :
 	def __getitem__(self,idx) :
 		path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
 		img = cv2.imread(path)
-		img = np.ascontiguousarray(img)
 		h,w,c = img.shape 
+		
+		if self.stacking :
+			img = np.expand_dims( cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 2)
+
+			face_bndbox = self.parsedAnnotations[idx]['face']
+			reye_bndbox = self.parsedAnnotations[idx]['reye']
+			leye_bndbox = self.parsedAnnotations[idx]['leye']
+
+			scalar = 1.0
+			if self.divide2 :
+				scalar = 2.0
+						
+			# face :
+			fy1 = int( min( max(0,face_bndbox[1]/scalar), h) )
+			fy2 = int( min( max(0,face_bndbox[3]/scalar), h) )
+			fx1 = int( min( max(0,face_bndbox[0]/scalar), w) )
+			fx2 = int( min( max(0,face_bndbox[2]/scalar), w) )
+			
+			face_img = img[fy1:fy2, fx1:fx2,:]
+			face_img = np.expand_dims(  cv2.resize(face_img, (w,h) ), 2)
+			
+			# reye :
+			ry1 = int( min( max(0,reye_bndbox[1]/scalar), h) )
+			ry2 = int( min( max(0,reye_bndbox[3]/scalar), h) )
+			rx1 = int( min( max(0,reye_bndbox[0]/scalar), w) )
+			rx2 = int( min( max(0,reye_bndbox[2]/scalar), w) )
+			
+			reye_img = img[ry1:ry2, rx1:rx2,:]
+			reye_img = np.expand_dims( cv2.resize(reye_img, (w,h) ), 2)
+			
+			# leye :
+			ly1 = int( min( max(0,leye_bndbox[1]/scalar), h) )
+			ly2 = int( min( max(0,leye_bndbox[3]/scalar), h) )
+			lx1 = int( min( max(0,leye_bndbox[0]/scalar), w) )
+			lx2 = int( min( max(0,leye_bndbox[2]/scalar), w) )
+			
+			leye_img = img[ly1:ly2, lx1:lx2,:]
+			leye_img = np.expand_dims( cv2.resize(leye_img, (w,h) ), 2)
+			
+			# concatenation :
+			img = np.concatenate( [img, reye_img, leye_img], axis=2)
+
+		img = np.ascontiguousarray(img)
 		img = cv2.resize( img, (self.h, self.w) )
 
 		gaze = copy.deepcopy(self.parsedAnnotations[idx]['data']['gaze'])
@@ -267,6 +332,21 @@ class LinearClassifier(nn.Module) :
 		return soft_out
 
 
+def test_stacking() :
+	dataset = load_dataset_XYS(stacking=True)
+
+	sample = dataset[0]
+
+	img = sample['image']
+	img0 = img[:,:,:].numpy().reshape((-1,224))
+
+	while True :
+		cv2.imshow('test',img0 )
+
+		key = cv2.waitKey(30)
+		if key == ord('q') :
+			break
+
 
 def test_dataset_visualization() :
 	ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
@@ -296,14 +376,14 @@ def test_dataset_visualization() :
 				break
 
 
-def load_dataset_XYS(img_dim=224) :
+def load_dataset_XYS(img_dim=224,stacking=False) :
 	ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
 	img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
 	width = img_dim
 	height = img_dim
 	transform = Transform #TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=True)
 	
 	return datasets
 
@@ -378,4 +458,5 @@ def test() :
 if __name__ == '__main__' :
 	#test_dataset()
 	#test_dataset_visualization()
-	test()
+	test_stacking()
+	#test()
