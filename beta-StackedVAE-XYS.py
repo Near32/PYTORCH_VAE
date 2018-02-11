@@ -18,7 +18,7 @@ from datasetXYS import load_dataset_XYS
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3):	
+def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3,beta = 5000e0):	
 	size = 256
 	dataset = load_dataset_XYS(img_dim=size,stacking=stacking)
 
@@ -34,7 +34,6 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 	conv_dim = 32
 	global use_cuda
 	net_depth = 5
-	beta = 5000e0
 	betavae = betaVAEXYS(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	print(betavae)
 
@@ -214,7 +213,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			if i % 100 == 0:
 			    print ("Epoch[%d/%d], Step [%d/%d], Total Loss: %.4f, "
 			           "Reconst Loss: %.4f, KL Div: %.7f, E[ |~| p(x|theta)]: %.7f " 
-			           %(epoch+1, nbrepoch, i+1, iter_per_epoch, total_loss.data[0], 
+			           %(epoch+1, nbr_epoch, i+1, iter_per_epoch, total_loss.data[0], 
 			             reconst_loss.data[0], kl_divergence.data[0],expected_log_lik.exp().data[0]) )
 
 		if best_loss is None :
@@ -444,13 +443,14 @@ if __name__ == '__main__' :
 	parser.add_argument('--epoch', type=int, default=100)
 	parser.add_argument('--latent', type=int, default=3)
 	parser.add_argument('--lr', type=float, default=1e-4)
+	parser.add_argument('--beta', type=float, default=5e3)
 	args = parser.parse_args()
 
 	if args.train :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent,beta=args.beta)
 	
 	if args.query :
-		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
+		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent,beta=args.beta)
 
 	if args.evaluate :
-		setting(train=False,evaluate=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
+		setting(train=False,evaluate=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent,beta=args.beta)
