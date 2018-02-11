@@ -118,10 +118,18 @@ class Encoder(nn.Module) :
 		#k = int(indim +2*pad -stride*(outdim-1))
 		k=4
 		#self.fc = conv( ind, outd, k, stride=stride,pad=pad, batchNorm=False)
-		self.fc = nn.Linear( 8192, 2048)
+		# d= = 3
+		#self.fc = nn.Linear( 8192, 2048)
+		# d = = 4 
+		'''
+		self.fc = nn.Linear( 4096, 2048)
 		self.fc1 = nn.Linear( 2048, 1024)
 		self.fc2 = nn.Linear( 1024, z_dim)
+		'''
+		self.fc = nn.Linear( 4096, 256)
+		self.fc1 = nn.Linear( 256, z_dim)
 		
+
 	def encode(self, x) :
 		out = self.cvs(x)
 
@@ -129,8 +137,9 @@ class Encoder(nn.Module) :
 		#print(out.size() )
 
 		out = F.relu( self.fc(out) )
-		out = F.relu( self.fc1(out) )
-		out = F.relu( self.fc2(out) )
+		#out = F.relu( self.fc1(out) )
+		out =  self.fc1(out)
+		#out = F.relu( self.fc2(out) )
 		
 		return out
 
@@ -370,19 +379,19 @@ def test_dSprite():
 
 	# Model :
 	frompath = True
-	z_dim = 8
+	z_dim = 10
 	img_dim = size
 	img_depth=1
 	conv_dim = 32
 	use_cuda = True#False
-	net_depth = 3
-	beta = 1e0
+	net_depth = 4
+	beta = 3e0#1e0
 	betavae = betaVAE(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	print(betavae)
 
 
 	# Optim :
-	lr = 5e-5
+	lr = 3e-4#5e-5
 	optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
 	
 	# Debug :
@@ -394,8 +403,8 @@ def test_dSprite():
 	fixed_x, _ = next(data_iter)
 	
 
-	#path = 'dSprite--beta{}-layers{}-z{}-conv{}-lr{}'.format(beta,net_depth,z_dim,conv_dim,lr)
-	path = 'dSprite--beta{}-layers{}-z{}-conv{}'.format(beta,net_depth,z_dim,conv_dim)
+	path = 'dSprite--beta{}-layers{}-z{}-conv{}-lr{}'.format(beta,net_depth,z_dim,conv_dim,lr)
+	#path = 'dSprite--beta{}-layers{}-z{}-conv{}'.format(beta,net_depth,z_dim,conv_dim)
 	if not os.path.exists( './beta-data/{}/'.format(path) ) :
 		os.mkdir('./beta-data/{}/'.format(path))
 	if not os.path.exists( './beta-data/{}/gen_images/'.format(path) ) :
@@ -510,11 +519,14 @@ def test_dSprite():
 			epoch_loss += total_loss.cpu().data[0]
 
 			if i % 100 == 0:
-			    print ("Epoch[%d/%d], Step [%d/%d], Total Loss: %.4f, "
-			           "Reconst Loss: %.4f, KL Div: %.7f, E[ |~| p(x|theta)]: %.7f " 
-			           %(epoch+1, 50, i+1, iter_per_epoch, total_loss.data[0], 
-			             reconst_loss.data[0], kl_divergence.data[0],expected_log_lik.exp().data[0]) )
-
+				print ("Epoch[%d/%d], Step [%d/%d], Total Loss: %.4f, "
+				       "Reconst Loss: %.4f, KL Div: %.7f, E[ |~| p(x|theta)]: %.7f " 
+				       %(epoch+1, 50, i+1, iter_per_epoch, total_loss.data[0], 
+				         reconst_loss.data[0], kl_divergence.data[0],expected_log_lik.exp().data[0]) )
+				temp_model_wts = betavae.state_dict()
+				# save temp model weights :
+				torch.save( temp_model_wts, os.path.join(SAVE_PATH,'temp.weights') )
+	
 		if best_loss is None :
 			#first validation : let us set the initialization but not save it :
 			best_loss = epoch_loss
