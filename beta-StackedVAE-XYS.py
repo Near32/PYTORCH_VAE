@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 
-from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, Bernoulli
+from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, betaVAEXYS2, Bernoulli
 from datasetXYS import load_dataset_XYS
 
 use_cuda = True
@@ -28,6 +28,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
         	                                  shuffle=True)
 
 	# Model :
+	'''
 	frompath = True
 	img_dim = size
 	img_depth=3
@@ -36,6 +37,15 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 	net_depth = 5
 	beta = 5000e0
 	betavae = betaVAEXYS(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
+	'''
+	frompath = True
+	img_dim = size
+	img_depth=3
+	conv_dim = 8#32
+	global use_cuda
+	net_depth = 5
+	beta = 1000e0
+	betavae = betaVAEXYS2(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	print(betavae)
 
 
@@ -44,7 +54,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 	
 		
 
-	path = 'test--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	path = 'test2--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
 	if stacking :
 		path+= '-stacked'
 
@@ -157,7 +167,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 		
 
 		for i, sample in enumerate(data_loader):
-			images = sample['image']
+			images = sample['image'].float()
 			# Save the reconstructed images
 			if i % 100 == 0 :
 				reconst_images, _, _ = betavae(fixed_x)
@@ -168,7 +178,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 					ri = reconst_images.view( (-1, 1, img_depth*img_dim, img_dim) )
 				torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+offset+1) ) )
 				
-			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) ).float()
+			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) )#.float()
 			
 			if use_cuda :
 				images = images.cuda() 
@@ -187,9 +197,13 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			#reconst_loss = torch.mean( (out.view(-1) - images.view(-1))**2 )
 			
 			# expected log likelyhood :
-			expected_log_lik = torch.mean( Bernoulli( out.view((-1)) ).log_prob( images.view((-1)) ) )
-			#expected_log_lik = torch.mean( Bernoulli( out ).log_prob( images ) )
-
+			try :
+				#expected_log_lik = torch.mean( Bernoulli( out.view((-1)) ).log_prob( images.view((-1)) ) )
+				expected_log_lik = torch.mean( Bernoulli( out ).log_prob( images ) )
+			except Exception as e :
+				print(e)
+				expected_log_lik = Variable(torch.ones(1).cuda())
+			
 			# kl divergence :
 			kl_divergence = 0.5 * torch.mean( torch.sum( (mu**2 + torch.exp(log_var) - log_var -1), dim=1) )
 			#kl_divergence = 0.5 * torch.sum( (mu**2 + torch.exp(log_var) - log_var -1) )
@@ -211,10 +225,10 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			
 			epoch_loss += total_loss.cpu().data[0]
 
-			if i % 100 == 0:
+			if i % 10 == 0:
 			    print ("Epoch[%d/%d], Step [%d/%d], Total Loss: %.4f, "
 			           "Reconst Loss: %.4f, KL Div: %.7f, E[ |~| p(x|theta)]: %.7f " 
-			           %(epoch+1, nbrepoch, i+1, iter_per_epoch, total_loss.data[0], 
+			           %(epoch+1, nbr_epoch, i+1, iter_per_epoch, total_loss.data[0], 
 			             reconst_loss.data[0], kl_divergence.data[0],expected_log_lik.exp().data[0]) )
 
 		if best_loss is None :

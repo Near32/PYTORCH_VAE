@@ -406,6 +406,286 @@ class betaVAEXYS(nn.Module) :
 
 		return out, mu, log_var
 
+
+class DecoderXYS2(nn.Module) :
+	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3 ) :
+		super(DecoderXYS2,self).__init__()
+		
+		self.net_depth = net_depth
+		self.dcs = []
+		outd = conv_dim*(2**self.net_depth)
+		ind= z_dim
+		k = 4
+		dim = k
+		pad = 1
+		stride = 2
+		self.fc = deconv( ind, outd, k, stride=1, pad=0, batchNorm=False)
+		
+		for i in reversed(range(self.net_depth)) :
+			ind = outd
+			outd = conv_dim*(2**i)
+			self.dcs.append( deconv( ind, outd,k,stride=stride,pad=pad) )
+			self.dcs.append( nn.LeakyReLU(0.05) )
+			dim = k-2*pad + stride*(dim-1)
+		self.dcs = nn.Sequential( *self.dcs) 
+			
+		ind = outd
+		self.img_depth=img_depth
+		outd = self.img_depth
+		outdim = img_dim
+		indim = dim
+		pad = 0
+		stride = 1
+		k = outdim +2*pad -stride*(indim-1)
+		self.dcout = deconv( ind, outd, k, stride=stride, pad=pad, batchNorm=False)
+		
+	def decode(self, z) :
+		z = z.view( z.size(0), z.size(1), 1, 1)
+		out = F.leaky_relu( self.fc(z), 0.05)
+		out = F.leaky_relu( self.dcs(out), 0.05)
+		out = F.sigmoid( self.dcout(out))
+		return out
+
+	def forward(self,z) :
+		return self.decode(z)
+
+class EncoderXYS2(nn.Module) :
+	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32 ) :
+		super(EncoderXYS2,self).__init__()
+		
+		self.net_depth = net_depth
+		self.cvs = []
+		outd = conv_dim
+		ind= img_depth
+		k = 4
+		dim = img_dim
+		pad = 1
+		stride = 2
+		self.cvs = []
+		self.cvs.append( conv( img_depth, conv_dim, 4, batchNorm=False))
+		self.cvs.append( nn.LeakyReLU(0.05) )
+		dim = (dim-k+2*pad)/stride +1
+
+		for i in range(1,self.net_depth,1) :
+			ind = outd
+			outd = conv_dim*(2**i)
+			self.cvs.append( conv( ind, outd,k,stride=stride,pad=pad) )
+			self.cvs.append( nn.LeakyReLU(0.05) )
+			dim = (dim-k+2*pad)/stride +1
+		self.cvs = nn.Sequential( *self.cvs)
+
+		ind = outd
+		outd = 64
+		outdim = 1
+		indim = dim
+		pad = 0
+		stride = 1
+		#k = int(indim +2*pad -stride*(outdim-1))
+		k=4
+		
+		#self.fc = conv( ind, outd, k, stride=stride,pad=pad, batchNorm=False)
+		#self.fc = nn.Linear( 16384, 2048)
+		#self.fc = nn.Linear( 32768, 2048)
+		self.fc = nn.Linear( 8192, 2048)
+		self.fc1 = nn.Linear( 2048, 1024)
+		self.fc2 = nn.Linear( 1024, z_dim)
+		
+	def encode(self, x) :
+		out = self.cvs(x)
+
+		out = out.view( (-1, self.num_features(out) ) )
+		#print(out.size() )
+
+		out = F.leaky_relu( self.fc(out), 0.05 )
+		out = F.leaky_relu( self.fc1(out), 0.05 )
+		out = self.fc2(out)
+		
+		return out
+
+	def forward(self,x) :
+		return self.encode(x)
+
+	def num_features(self, x) :
+		size = x.size()[1:]
+		# all dim except the batch dim...
+		num_features = 1
+		for s in size :
+			num_features *= s
+		return num_features
+
+
+class betaVAEXYS2(nn.Module) :
+	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
+		super(betaVAEXYS2,self).__init__()
+		self.encoder = EncoderXYS2(z_dim=2*z_dim, img_depth=img_depth, img_dim=img_dim, conv_dim=conv_dim,net_depth=net_depth)
+		self.decoder = DecoderXYS2(z_dim=z_dim, img_dim=img_dim, img_depth=img_depth, net_depth=net_depth)
+
+		self.z_dim = z_dim
+		self.img_dim=img_dim
+		self.img_depth=img_depth
+		
+		self.beta = beta
+		self.use_cuda = use_cuda
+
+		if self.use_cuda :
+			self = self.cuda()
+
+	def reparameterize(self, mu,log_var) :
+		eps = torch.randn( (mu.size()[0], mu.size()[1]) )
+		veps = Variable( eps)
+		#veps = Variable( eps, requires_grad=False)
+		if self.use_cuda :
+			veps = veps.cuda()
+		z = mu + veps * torch.exp( log_var/2 )
+		return z
+
+	def forward(self,x) :
+		h = self.encoder( x)
+		mu, log_var = torch.chunk(h, 2, dim=1 )
+		z = self.reparameterize( mu,log_var)
+		out = self.decoder(z)
+
+		return out, mu, log_var
+
+
+
+class DecoderXYS3(nn.Module) :
+	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3 ) :
+		super(DecoderXYS3,self).__init__()
+		
+		self.net_depth = net_depth
+		self.dcs = []
+		outd = conv_dim*(2**self.net_depth)
+		ind= z_dim
+		k = 4
+		dim = k
+		pad = 1
+		stride = 2
+		self.fc = deconv( ind, outd, k, stride=1, pad=0, batchNorm=False)
+		
+		for i in reversed(range(self.net_depth)) :
+			ind = outd
+			outd = conv_dim*(2**i)
+			self.dcs.append( deconv( ind, outd,k,stride=stride,pad=pad) )
+			self.dcs.append( nn.LeakyReLU(0.05) )
+			dim = k-2*pad + stride*(dim-1)
+		self.dcs = nn.Sequential( *self.dcs) 
+			
+		ind = outd
+		self.img_depth=img_depth
+		outd = self.img_depth
+		outdim = img_dim
+		indim = dim
+		pad = 0
+		stride = 1
+		k = outdim +2*pad -stride*(indim-1)
+		self.dcout = deconv( ind, outd, k, stride=stride, pad=pad, batchNorm=False)
+		
+	def decode(self, z) :
+		z = z.view( z.size(0), z.size(1), 1, 1)
+		out = F.leaky_relu( self.fc(z), 0.05)
+		out = F.leaky_relu( self.dcs(out), 0.05)
+		out = F.sigmoid( self.dcout(out))
+		return out
+
+	def forward(self,z) :
+		return self.decode(z)
+
+class EncoderXYS3(nn.Module) :
+	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32 ) :
+		super(EncoderXYS3,self).__init__()
+		
+		self.net_depth = net_depth
+		self.img_depth= img_depth
+		self.z_dim = z_dim
+		# 224
+		self.cv1 = conv( self.img_depth, 96, 11, batchNorm=False)
+		# 108/109 = E( (224-11+2*1)/2 ) + 1
+		self.d1 = nn.Dropout2d(p=0.8)
+		self.cv2 = conv( 96, 256, 5)
+		# 53 / 54
+		self.d2 = nn.Dropout2d(p=0.8)
+		self.cv3 = conv( 256, 384, 3)
+		# 27 / 27
+		self.d3 = nn.Dropout2d(p=0.5)
+		self.cv4 = conv( 384, 64, 1)
+		# 15
+		self.d4 = nn.Dropout2d(p=0.5)
+		self.fc = conv( 64, 64, 4, stride=1,pad=0, batchNorm=False)
+		# 12
+		#self.fc1 = nn.Linear(64 * (12**2), 128)
+		self.fc1 = nn.Linear(64 * (14**2), 128)
+		self.bn1 = nn.BatchNorm1d(128)
+		self.fc2 = nn.Linear(128, 64)
+		self.bn2 = nn.BatchNorm1d(64)
+		self.fc3 = nn.Linear(64, self.z_dim)
+
+	def encode(self, x) :
+		out = F.leaky_relu( self.cv1(x), 0.15)
+		out = self.d1(out)
+		out = F.leaky_relu( self.cv2(out), 0.15)
+		out = self.d2(out)
+		out = F.leaky_relu( self.cv3(out), 0.15)
+		out = self.d3(out)
+		out = F.leaky_relu( self.cv4(out), 0.15)
+		out = self.d4(out)
+		out = F.leaky_relu( self.fc(out))
+		#print(out.size())
+		out = out.view( -1, self.num_flat_features(out) )
+		#print(out.size())
+		out = F.leaky_relu( self.bn1( self.fc1( out) ), 0.15 )
+		out = F.leaky_relu( self.bn2( self.fc2( out) ), 0.15)
+		out = F.relu(self.fc3( out) )
+
+
+		return out
+
+
+	def forward(self,x) :
+		return self.encode(x)
+
+	def num_flat_features(self, x) :
+		size = x.size()[1:]
+		# all dim except the batch dim...
+		num_features = 1
+		for s in size :
+			num_features *= s
+		return num_features
+
+
+class betaVAEXYS3(nn.Module) :
+	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
+		super(betaVAEXYS3,self).__init__()
+		self.encoder = EncoderXYS3(z_dim=2*z_dim, img_depth=img_depth, img_dim=img_dim, conv_dim=conv_dim,net_depth=net_depth)
+		self.decoder = DecoderXYS3(z_dim=z_dim, img_dim=img_dim, img_depth=img_depth, net_depth=net_depth)
+
+		self.z_dim = z_dim
+		self.img_dim=img_dim
+		self.img_depth=img_depth
+		
+		self.beta = beta
+		self.use_cuda = use_cuda
+
+		if self.use_cuda :
+			self = self.cuda()
+
+	def reparameterize(self, mu,log_var) :
+		eps = torch.randn( (mu.size()[0], mu.size()[1]) )
+		veps = Variable( eps)
+		#veps = Variable( eps, requires_grad=False)
+		if self.use_cuda :
+			veps = veps.cuda()
+		z = mu + veps * torch.exp( log_var/2 )
+		return z
+
+	def forward(self,x) :
+		h = self.encoder( x)
+		mu, log_var = torch.chunk(h, 2, dim=1 )
+		z = self.reparameterize( mu,log_var)
+		out = self.decoder(z)
+
+		return out, mu, log_var
+
 class Rescale(object) :
 	def __init__(self, output_size) :
 		assert( isinstance(output_size, (int, tuple) ) )

@@ -18,9 +18,9 @@ from datasetXYS import load_dataset_XYS
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):	
+def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3):	
 	size = 256
-	dataset = load_dataset_XYS(img_dim=size)
+	dataset = load_dataset_XYS(img_dim=size,stacking=stacking)
 
 	# Data loader
 	data_loader = torch.utils.data.DataLoader(dataset=dataset,
@@ -30,7 +30,6 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
 	# Model :
 	'''
 	frompath = True
-	z_dim = 4
 	img_dim = size
 	img_depth=3
 	conv_dim = 32
@@ -40,7 +39,6 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
 	betavae = betaVAEXYS(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	'''
 	frompath = True
-	z_dim = 10
 	img_dim = size
 	img_depth=3
 	conv_dim = 8#32
@@ -48,16 +46,28 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
 	net_depth = 5
 	beta = 1000e0
 	betavae = betaVAEXYS2(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
+	'''
+	frompath = True
+	img_dim = size
+	img_depth=3
+	conv_dim = 8#32
+	global use_cuda
+	net_depth = 6
+	beta = 1000e0
+	betavae = betaVAEXYS3(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
+	'''
 	print(betavae)
 
 
 	# Optim :
-	lr = 1e-4
 	optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
 	
 		
 
-	path = 'test--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	path = 'test2--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	if stacking :
+		path+= '-stacked'
+
 	if not os.path.exists( './beta-data/{}/'.format(path) ) :
 		os.mkdir('./beta-data/{}/'.format(path))
 	if not os.path.exists( './beta-data/{}/gen_images/'.format(path) ) :
@@ -76,7 +86,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
 			print('EXCEPTION : NET LOADING : {}'.format(e) )
 
 	if train :
-		train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=nbr_epoch,batch_size=batch_size,offset=offset)
+		train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=nbr_epoch,batch_size=batch_size,offset=offset, stacking=stacking)
 	else :
 		if evaluate :
 			evaluate_disentanglement(betavae, dataset, nbr_epoch=nbr_epoch)
@@ -85,7 +95,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
 
 
 
-def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,batch_size=32, offset=0) :
+def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,batch_size=32, offset=0, stacking=False) :
 	global use_cuda
 	
 	z_dim = betavae.z_dim
@@ -105,8 +115,13 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 	fixed_x, _ = sample['image'], sample['landmarks']
 	
 	fixed_x = fixed_x.view( (-1, img_depth, img_dim, img_dim) )
-	torchvision.utils.save_image(fixed_x.cpu(), './beta-data/{}/real_images.png'.format(path))
-	
+	if not stacking :
+		torchvision.utils.save_image(fixed_x.cpu(), './beta-data/{}/real_images.png'.format(path))
+	else :
+		fixed_x0 = fixed_x.view( (-1, 1, img_depth*img_dim, img_dim) )
+		torchvision.utils.save_image(fixed_x0, './beta-data/{}/real_images.png'.format(path))
+
+
 	fixed_x = Variable(fixed_x.view(fixed_x.size(0), img_depth, img_dim, img_dim)).float()
 	if use_cuda :
 		fixed_x = fixed_x.cuda()
@@ -126,8 +141,10 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 		nbr_steps = 8
 		mu_mean /= batch_size
 		sigma_mean /= batch_size
-		gen_images = torch.ones( (8, img_depth, img_dim, img_dim) )
-
+		gen_images = torch.ones( (nbr_steps, img_depth, img_dim, img_dim) )
+		if stacking :
+			gen_images = torch.ones( (nbr_steps, 1, img_depth*img_dim, img_dim) )
+			
 		for latent in range(z_dim) :
 			#var_z0 = torch.stack( [mu_mean]*nbr_steps, dim=0)
 			var_z0 = torch.zeros(nbr_steps, z_dim)
@@ -146,6 +163,8 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 
 			gen_images_latent = betavae.decoder(var_z0)
 			gen_images_latent = gen_images_latent.view(-1, img_depth, img_dim, img_dim).cpu().data
+			if stacking :
+				gen_images_latent = gen_images_latent.view( -1, 1, img_depth*img_dim, img_dim)
 			gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
 
 		#torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/dim{}/{}.png'.format(path,latent,(epoch+1)) )
@@ -158,17 +177,18 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 		
 
 		for i, sample in enumerate(data_loader):
-			images = sample['image']
+			images = sample['image'].float()
 			# Save the reconstructed images
 			if i % 100 == 0 :
 				reconst_images, _, _ = betavae(fixed_x)
 				reconst_images = reconst_images.view(-1, img_depth, img_dim, img_dim).cpu().data
 				orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
 				ri = torch.cat( [orimg, reconst_images], dim=2)
+				if stacking :
+					ri = reconst_images.view( (-1, 1, img_depth*img_dim, img_dim) )
 				torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+offset+1) ) )
-			
-			
-			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) ).float()
+				
+			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) )#.float()
 			
 			if use_cuda :
 				images = images.cuda() 
@@ -187,9 +207,13 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			#reconst_loss = torch.mean( (out.view(-1) - images.view(-1))**2 )
 			
 			# expected log likelyhood :
-			expected_log_lik = torch.mean( Bernoulli( out.view((-1)) ).log_prob( images.view((-1)) ) )
-			#expected_log_lik = torch.mean( Bernoulli( out ).log_prob( images ) )
-
+			try :
+				#expected_log_lik = torch.mean( Bernoulli( out.view((-1)) ).log_prob( images.view((-1)) ) )
+				expected_log_lik = torch.mean( Bernoulli( out ).log_prob( images ) )
+			except Exception as e :
+				print(e)
+				expected_log_lik = Variable(torch.ones(1).cuda())
+			
 			# kl divergence :
 			kl_divergence = 0.5 * torch.mean( torch.sum( (mu**2 + torch.exp(log_var) - log_var -1), dim=1) )
 			#kl_divergence = 0.5 * torch.sum( (mu**2 + torch.exp(log_var) - log_var -1) )
@@ -214,7 +238,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			if i % 10 == 0:
 			    print ("Epoch[%d/%d], Step [%d/%d], Total Loss: %.4f, "
 			           "Reconst Loss: %.4f, KL Div: %.7f, E[ |~| p(x|theta)]: %.7f " 
-			           %(epoch+1, 50, i+1, iter_per_epoch, total_loss.data[0], 
+			           %(epoch+1, nbr_epoch, i+1, iter_per_epoch, total_loss.data[0], 
 			             reconst_loss.data[0], kl_divergence.data[0],expected_log_lik.exp().data[0]) )
 
 		if best_loss is None :
@@ -438,16 +462,19 @@ if __name__ == '__main__' :
 	parser.add_argument('--train',action='store_true',default=False)
 	parser.add_argument('--query',action='store_true',default=False)
 	parser.add_argument('--evaluate',action='store_true',default=False)
+	parser.add_argument('--stacked',action='store_true',default=False)
 	parser.add_argument('--offset', type=int, default=0)
 	parser.add_argument('--batch', type=int, default=32)
 	parser.add_argument('--epoch', type=int, default=100)
+	parser.add_argument('--latent', type=int, default=3)
+	parser.add_argument('--lr', type=float, default=1e-4)
 	args = parser.parse_args()
 
 	if args.train :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch)
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
 	
 	if args.query :
-		setting(train=False)
+		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
 
 	if args.evaluate :
-		setting(train=False,evaluate=True,nbr_epoch=args.epoch)
+		setting(train=False,evaluate=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
