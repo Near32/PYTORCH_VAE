@@ -8,7 +8,6 @@ import numpy as np
 
 from PIL import Image
 
-
 from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, Bernoulli
 from datasetXYS import load_dataset_XYS
 
@@ -190,25 +189,25 @@ def test_dSprite():
 
 	# Model :
 	frompath = True
-	'''
 	z_dim = 10
 	img_dim = size
 	img_depth=1
 	conv_dim = 64
 	use_cuda = True#False
 	net_depth = 3
-	beta = 1e0
+	beta = 5e0
 	betavae = betaVAEdSprite(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	'''
 	# Model :
 	z_dim = 10
 	img_dim = size
 	img_depth=1
-	conv_dim = 32
+	conv_dim = 16
 	use_cuda = True#False
 	net_depth = 3
 	beta = 100e0
 	betavae = betaVAE(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
+	'''
 	print(betavae)
 
 
@@ -240,9 +239,16 @@ def test_dSprite():
 	fixed_x = fixed_x.view( (-1, img_depth, img_dim, img_dim) )
 	torchvision.utils.save_image(255*fixed_x.cpu(), './beta-data/{}/real_images.png'.format(path))
 	
+	# effect of each latent var :
+	nbr_steps = 8
+	var_x = fixed_x[0, :, :, :]
+	var_x = torch.cat( nbr_steps*[var_x], dim=0 ).unsqueeze(1)
+	
 	fixed_x = Variable(fixed_x.view(fixed_x.size(0), img_depth, img_dim, img_dim))
+	var_x = Variable(var_x)
 	if use_cuda :
 		fixed_x = fixed_x.cuda()
+		var_x = var_x.cuda()
 
 	out = torch.zeros((1,1))
 
@@ -262,17 +268,21 @@ def test_dSprite():
 			print('EXCEPTION : NET LOADING : {}'.format(e) )
 
 
+	
 	for epoch in range(50):
 		
 		# Save generated variable images :
-		nbr_steps = 8
+		var_z = betavae.encoder(var_x)
+		mu_z, log_var_z = torch.chunk(var_z, 2, dim=1 )
 		mu_mean /= batch_size
+		
 		sigma_mean /= batch_size
-		gen_images = torch.ones( (8, img_depth, img_dim, img_dim) )
+		gen_images = None
 
 		for latent in range(z_dim) :
 			#var_z0 = torch.stack( [mu_mean]*nbr_steps, dim=0)
-			var_z0 = torch.zeros(nbr_steps, z_dim)
+			#var_z0 = torch.zeros(nbr_steps, z_dim)
+			var_z0 = mu_z.cpu().data
 			val = mu_mean[latent]-sigma_mean[latent]
 			step = 2.0*sigma_mean[latent]/nbr_steps
 			print(latent,mu_mean[latent],step)
@@ -288,10 +298,13 @@ def test_dSprite():
 
 			gen_images_latent = betavae.decoder(var_z0)
 			gen_images_latent = gen_images_latent.view(-1, img_depth, img_dim, img_dim).cpu().data
-			gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
+			if gen_images is None :
+				gen_images = gen_images_latent
+			else :
+				gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
 
 		#torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/dim{}/{}.png'.format(path,latent,(epoch+1)) )
-		torchvision.utils.save_image(255.0*gen_images,'./beta-data/{}/gen_images/{}.png'.format(path,(epoch+67)) )
+		torchvision.utils.save_image(255.0*gen_images,'./beta-data/{}/gen_images/{}.png'.format(path,(epoch)) )
 
 		mu_mean = 0.0
 		sigma_mean = 0.0
@@ -306,8 +319,7 @@ def test_dSprite():
 				reconst_images = reconst_images.view(-1, img_depth, img_dim, img_dim).cpu().data
 				orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
 				ri = torch.cat( [orimg, reconst_images], dim=2)
-				torchvision.utils.save_image(255*ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+67)) )
-			
+				torchvision.utils.save_image(255*ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch)) )
 			
 			images = Variable( (images.view(-1,1,img_dim, img_dim) ) )
 			

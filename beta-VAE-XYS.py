@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 
-from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, Bernoulli
+from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, betaVAEXYS2, Bernoulli
 from datasetXYS import load_dataset_XYS
 
 use_cuda = True
@@ -28,6 +28,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
         	                                  shuffle=True)
 
 	# Model :
+	'''
 	frompath = True
 	z_dim = 4
 	img_dim = size
@@ -37,11 +38,21 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False):
 	net_depth = 5
 	beta = 5000e0
 	betavae = betaVAEXYS(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
+	'''
+	frompath = True
+	z_dim = 10
+	img_dim = size
+	img_depth=3
+	conv_dim = 8#32
+	global use_cuda
+	net_depth = 5
+	beta = 1000e0
+	betavae = betaVAEXYS2(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	print(betavae)
 
 
 	# Optim :
-	lr = 1e-5
+	lr = 1e-4
 	optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
 	
 		
@@ -200,7 +211,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			
 			epoch_loss += total_loss.cpu().data[0]
 
-			if i % 100 == 0:
+			if i % 10 == 0:
 			    print ("Epoch[%d/%d], Step [%d/%d], Total Loss: %.4f, "
 			           "Reconst Loss: %.4f, KL Div: %.7f, E[ |~| p(x|theta)]: %.7f " 
 			           %(epoch+1, 50, i+1, iter_per_epoch, total_loss.data[0], 
