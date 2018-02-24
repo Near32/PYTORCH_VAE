@@ -49,7 +49,7 @@ Epoch | Reconstruction | Latent Space
 
 #### Observations :
 
-While the X,Y coordinates and S scale latent variables are clearly disentangled and reconstructed, the Sh shape latent variables is for from being reconstructed, let alone disentangled.
+While the X,Y coordinates and S scale latent variables are clearly disentangled and reconstructed, the Sh shape latent variables is far from being reconstructed, let alone disentangled.
 
 ### XYS-latent dataset :
 
