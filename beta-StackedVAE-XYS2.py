@@ -44,7 +44,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 	conv_dim = 8#32
 	global use_cuda
 	net_depth = 5
-	beta = 1000e0
+	beta = 1e4#1000e0
 	betavae = betaVAEXYS2(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	'''
 	frompath = True
