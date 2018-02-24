@@ -25,6 +25,32 @@ In order to use the XYS-latent dataset, you need to :
 
 ## Experiments
 
+### "dSprites-Disentanglement testing Sprites dataset" :
+
+Using this dataset and the following hyperparameters :
+
+* Number of latent variables : 10
+* learning rate : 1e-5
+* "Temperature" hyperparameter Beta : 4e0
+* Number of layers of the decoder : 3
+* Base depth of the convolution/deconvolution layers : 32
+
+Real images : ![real1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/real_images.png)
+
+
+Epoch | Reconstruction | Latent Space 
+------|---------------|---------------
+1 | ![Dreconst1-1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/1.png) | ![Dgen1-1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/1.png)
+10 | ![Dreconst1-10](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/10.png) | ![Dgen1-10](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/10.png)
+30 | ![Dreconst1-30](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/30.png) | ![Dgen1-30](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/30.png)
+50 | ![Dreconst1-50](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/70.png) | ![Dgen1-50](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/70.png)
+80 | ![Dreconst1-80](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/100.png) | ![Dgen1-80](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/100.png)
+
+
+#### Observations :
+
+While the X,Y coordinates and S scale latent variables are clearly disentangled and reconstructed, the Sh shape latent variables is for from being reconstructed, let alone disentangled.
+
 ### XYS-latent dataset :
 
 Using this dataset and the following hyperparameters :
