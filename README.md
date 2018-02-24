@@ -38,13 +38,17 @@ Using this dataset and the following hyperparameters :
 Real images : ![real1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/real_images.png)
 
 
+With regards to the reconstruction images, every pair of rows consists of the real images on the first row and the reconstructed images on the second one.
+With regards to the latent space sampling, each latent are equally sampled between in the range [-3,3].
+
+ 
 Epoch | Reconstruction | Latent Space 
 ------|---------------|---------------
 1 | ![Dreconst1-1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/1.png) | ![Dgen1-1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/1.png)
 10 | ![Dreconst1-10](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/10.png) | ![Dgen1-10](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/10.png)
 30 | ![Dreconst1-30](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/30.png) | ![Dgen1-30](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/30.png)
 50 | ![Dreconst1-50](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/70.png) | ![Dgen1-50](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/70.png)
-80 | ![Dreconst1-80](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/100.png) | ![Dgen1-80](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/100.png)
+80 | ![Dreconst1-80](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/reconst_images/80.png) | ![Dgen1-80](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/gen_images/80.png)
 
 
 #### Observations :
