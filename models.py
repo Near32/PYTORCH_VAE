@@ -734,6 +734,28 @@ class VAE(nn.Module) :
 
 		return out, mu, log_var
 
+
+
+class GazeHead(nn.Module) :
+	def __init__(self, outdim,nbr_latents=10):
+		super(GazeHead,self).__init__()
+		self.outdim = outdim
+		self.nbr_latents = nbr_latents
+
+		self.fc1 = nn.Linear(self.nbr_latents, 256)
+		self.bn1 = nn.BatchNorm1d(128)
+		self.fc2 = nn.Linear(128, 64)
+		self.bn2 = nn.BatchNorm1d(64)
+		self.fc3 = nn.Linear(64, self.outdim)
+
+	def forward(self, x) :
+		out = F.leaky_relu( self.bn1( self.fc1( out) ) )
+		out = F.leaky_relu( self.bn2( self.fc2( out) ) )
+		out = self.fc3( out)
+
+		return out
+
+		
 def test_mnist():
 	import os
 	import torchvision
