@@ -349,8 +349,10 @@ def test_stacking() :
 
 
 def test_dataset_visualization() :
-	ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
-	img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
+	#ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
+	#img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
+	ann_dir = './dataset-XYS-latent/annotations'
+	img_dir = './dataset-XYS-latent/images'
 	width = 448
 	height = 448
 	transform = TransformPlus
@@ -379,8 +381,10 @@ def test_dataset_visualization() :
 def load_dataset_XYS(img_dim=224,stacking=False) :
 	#ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
 	#img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
-	ann_dir = '/home/kevin/DATASETS/dataset-XYS-latent/annotations'
-	img_dir = '/home/kevin/DATASETS/dataset-XYS-latent/images'
+	#ann_dir = '/home/kevin/DATASETS/dataset-XYS-latent/annotations'
+	#img_dir = '/home/kevin/DATASETS/dataset-XYS-latent/images'
+	ann_dir = './dataset-XYS-latent/annotations'
+	img_dir = './dataset-XYS-latent/images'
 	width = img_dim
 	height = img_dim
 	transform = Transform #TransformPlus
