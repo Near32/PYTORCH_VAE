@@ -7,7 +7,7 @@ This repository is an attempt at replicating some results presented in Irina Hig
 
 ## Requirements 
 
-### ["dSprites - Disentanglement testing Sprites dataset"](https://github.com/deepmind/dsprites-dataset)
+### ["dSprites - Disentanglement testing Sprites dataset"](https://github.com/deepmind/dsprites-dataset) :
 
 In order to use DeepMind's ["dSprites - Disentanglement testing Sprites dataset"](https://github.com/deepmind/dsprites-dataset), you need to clone their repository and place it at the root of this one.
 
@@ -15,7 +15,7 @@ In order to use DeepMind's ["dSprites - Disentanglement testing Sprites dataset"
 git clone https://github.com/deepmind/dsprites-dataset.git
 ```
 
-### XYS-latent dataset 
+### XYS-latent dataset :
 
 In order to use the XYS-latent dataset, you need to :
 
@@ -23,9 +23,9 @@ In order to use the XYS-latent dataset, you need to :
 2. extract it at the root of this repository's folder.
 
 
-## Experiments :
+## Experiments
 
-### XYS-latent dataset 
+### XYS-latent dataset :
 
 Using this dataset and the following hyperparameters :
 
@@ -36,7 +36,14 @@ Using this dataset and the following hyperparameters :
 * Base depth of the convolution/deconvolution layers : 32
 * Stacked architecture : [x]
 
-Real image : ![real1](/doc/XYS-latent/test--XYS--img256-lr1e-05-beta5000.0-layers5-z10-conv32-stacked/real_images.png)
+Real images : ![real1](/doc/XYS-latent/test--XYS--img256-lr1e-05-beta5000.0-layers5-z10-conv32-stacked/real_images.png)
+
+Considering one column, every three row contains :
+
+1. Full image.
+2. Right-eye patch extracted from the full image.
+3. Left-eye patch extracted from the full image.
+
 
 Epoch | Reconstruction | Latent Space 
 ------|---------------|---------------
@@ -47,7 +54,10 @@ Epoch | Reconstruction | Latent Space
 100 | ![reconst1-100](/doc/XYS-latent/test--XYS--img256-lr1e-05-beta5000.0-layers5-z10-conv32-stacked/reconst_images/100.png) | ![gen1-100](/doc/XYS-latent/test--XYS--img256-lr1e-05-beta5000.0-layers5-z10-conv32-stacked/gen_images/100.png)
 
 
+#### Observations :
 
+The S-scale latent variable seems to have been clearly disentangled while the other two latent variables, X and Y coordinates of the gaze on the camera plane, seem to be requiring a finer level of details from the decoder to show good reconstructions. Further analysis show that those latent variables are also quite nicely disentangled eventhough it is difficult to see here.
+ 
 ## Disclaimers
 
 I do not own any rights on some of the datasets that have been used and experienced with, namely :
