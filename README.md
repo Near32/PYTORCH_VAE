@@ -35,7 +35,8 @@ Using this dataset and the following hyperparameters :
 * Number of layers of the decoder : 3
 * Base depth of the convolution/deconvolution layers : 32
 
-Real images : ![real1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/real_images.png)
+Real images : 
+![Dreal1](/doc/dSprite/dSprite--beta4.0-layers3-z10-conv32/real_images.png)
 
 
 With regards to the reconstruction images, every pair of rows consists of the real images on the first row and the reconstructed images on the second one.
@@ -66,7 +67,8 @@ Using this dataset and the following hyperparameters :
 * Base depth of the convolution/deconvolution layers : 32
 * Stacked architecture : [x]
 
-Real images : ![real1](/doc/XYS-latent/test--XYS--img256-lr1e-05-beta5000.0-layers5-z10-conv32-stacked/real_images.png)
+Real images : 
+![real1](/doc/XYS-latent/test--XYS--img256-lr1e-05-beta5000.0-layers5-z10-conv32-stacked/real_images.png)
 
 Considering one column, every three row contains :
 
