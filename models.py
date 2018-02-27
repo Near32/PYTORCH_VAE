@@ -750,13 +750,13 @@ class GazeHead(nn.Module) :
 		self.fc3 = nn.Linear(64, self.outdim)
 
 	def forward(self, x) :
-		out = F.leaky_relu( self.bn1( self.fc1( out) ) )
+		out = F.leaky_relu( self.bn1( self.fc1( x) ) )
 		out = F.leaky_relu( self.bn2( self.fc2( out) ) )
 		out = self.fc3( out)
 
 		return out
 
-	def setSAVE_PATH(path) :
+	def setSAVE_PATH(self,path) :
 		self.SAVE_PATH = path
 
 		

@@ -84,7 +84,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 
 	# GAZE HEAD :
 	if train_head :
-		gazehead = GazeHead(outdim=2, nbr_latent=z_dim)
+		gazehead = GazeHead(outdim=2, nbr_latents=z_dim)
 	# LOADING :
 	gh_path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
 	if stacking :
@@ -212,7 +212,7 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 
 		for i, sample in enumerate(data_loader):
 			images = sample['image'].float()
-			gaze = sample['gaze'].float()
+			gaze = sample['landmarks'].float()
 
 			# Save the reconstructed images
 			if i % 100 == 0 :
@@ -715,7 +715,7 @@ if __name__ == '__main__' :
 
 	if args.train :
 		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
-	else if args.train_head :
+	elif args.train_head :
 		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, train_head=True)
 
 	if args.query :
