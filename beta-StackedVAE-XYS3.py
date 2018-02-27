@@ -12,13 +12,13 @@ import numpy as np
 from PIL import Image
 
 
-from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, betaVAEXYS2, betaVAEXYS3, Bernoulli
+from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, betaVAEXYS2, betaVAEXYS3, Bernoulli, GazeHead
 from datasetXYS import load_dataset_XYS
 
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3):	
+def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3, train_head=False):	
 	size = 256
 	dataset = load_dataset_XYS(img_dim=size,stacking=stacking)
 
@@ -58,11 +58,8 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 	betavae = betaVAEXYS3(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	print(betavae)
 
-
-	# Optim :
-	optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
-	
 		
+	# LOADING :
 
 	path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
 	if stacking :
@@ -85,13 +82,258 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 		except Exception as e :
 			print('EXCEPTION : NET LOADING : {}'.format(e) )
 
+	# GAZE HEAD :
+	if train_head :
+		gazehead = GazeHead(outdim=2, nbr_latent=z_dim)
+	# LOADING :
+	gh_path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	if stacking :
+		gh_path+= '-stacked'
+
+	if not os.path.exists( './beta-data/{}/'.format(gh_path) ) :
+		os.mkdir('./beta-data/{}/'.format(gh_path))
+	gh_SAVE_PATH = os.path.join('./beta-data/{}'.format(path), 'gazehead.weights') 
+	gazehead.setSAVE_PATH(gh_SAVE_PATH)
+	
+	try :
+		gazehead.load_state_dict( torch.load( gh_SAVE_PATH) )
+		print('GAZE HEAD NET LOADING : OK.')
+	except Exception as e :
+		print('EXCEPTION : GAZE HEAD NET LOADING : {}'.format(e) )	
+
+
+
+	# OPTIMIZER :
+	if not train_head :
+		optimizer = torch.optim.Adam( betavae.parameters(), lr=lr)
+	else :
+		optimizers = dict()
+		optimizers['model'] = torch.optim.Adam( betavae.parameters(), lr=lr)
+		optimizers['head'] = torch.optim.Adam( gazehead.parameters(), lr=lr)
+
 	if train :
-		train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=nbr_epoch,batch_size=batch_size,offset=offset, stacking=stacking)
+		if train_head :
+			train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,nbr_epoch=nbr_epoch,batch_size=batch_size,offset=offset, stacking=stacking)
+		else :
+			train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=nbr_epoch,batch_size=batch_size,offset=offset, stacking=stacking)
 	else :
 		if evaluate :
 			evaluate_disentanglement(betavae, dataset, nbr_epoch=nbr_epoch)
 		else :
 			query_XYS(betavae, data_loader,path)
+
+
+
+def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,nbr_epoch=100,batch_size=32, offset=0, stacking=False) :
+	global use_cuda
+	
+	z_dim = betavae.z_dim
+	img_depth=betavae.img_depth
+	img_dim = betavae.img_dim
+
+	data_iter = iter(data_loader)
+	iter_per_epoch = len(data_loader)
+
+	# Debug :
+	# fixed inputs for debugging
+	fixed_z = Variable(torch.randn(45, z_dim))
+	if use_cuda :
+		fixed_z = fixed_z.cuda()
+
+	sample = next(data_iter)
+	fixed_x, _ = sample['image'], sample['landmarks']
+	
+	fixed_x = fixed_x.view( (-1, img_depth, img_dim, img_dim) )
+	if not stacking :
+		torchvision.utils.save_image(fixed_x.cpu(), './beta-data/{}/real_images.png'.format(path))
+	else :
+		fixed_x0 = fixed_x.view( (-1, 1, img_depth*img_dim, img_dim) )
+		torchvision.utils.save_image(fixed_x0, './beta-data/{}/real_images.png'.format(path))
+
+
+	fixed_x = Variable(fixed_x.view(fixed_x.size(0), img_depth, img_dim, img_dim)).float()
+	if use_cuda :
+		fixed_x = fixed_x.cuda()
+
+	out = torch.zeros((1,1))
+
+	# variations over the latent variable :
+	sigma_mean = torch.ones((z_dim))
+	mu_mean = torch.zeros((z_dim))
+
+	best_loss = None
+	best_model_wts = betavae.state_dict()
+	
+	cum_acc =0.0
+	cum_merr = 0.0
+	cum_stderr = 0.0
+	
+
+	for epoch in range(nbr_epoch):
+		
+		# Save generated variable images :
+		nbr_steps = 8
+		mu_mean /= batch_size
+		sigma_mean /= batch_size
+		gen_images = torch.ones( (nbr_steps, img_depth, img_dim, img_dim) )
+		if stacking :
+			gen_images = torch.ones( (nbr_steps, 1, img_depth*img_dim, img_dim) )
+			
+		for latent in range(z_dim) :
+			#var_z0 = torch.stack( [mu_mean]*nbr_steps, dim=0)
+			var_z0 = torch.zeros(nbr_steps, z_dim)
+			val = mu_mean[latent]-sigma_mean[latent]
+			step = 2.0*sigma_mean[latent]/nbr_steps
+			print(latent,mu_mean[latent],step)
+			for i in range(nbr_steps) :
+				var_z0[i] = mu_mean
+				var_z0[i][latent] = val
+				val += step
+
+			var_z0 = Variable(var_z0)
+			if use_cuda :
+				var_z0 = var_z0.cuda()
+
+
+			gen_images_latent = betavae.decoder(var_z0)
+			gen_images_latent = gen_images_latent.view(-1, img_depth, img_dim, img_dim).cpu().data
+			if stacking :
+				gen_images_latent = gen_images_latent.view( -1, 1, img_depth*img_dim, img_dim)
+			gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
+
+		#torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/dim{}/{}.png'.format(path,latent,(epoch+1)) )
+		torchvision.utils.save_image(gen_images,'./beta-data/{}/gen_images/{}.png'.format(path,(epoch+offset+1)) )
+
+		mu_mean = 0.0
+		sigma_mean = 0.0
+
+		epoch_loss = 0.0
+		
+
+		for i, sample in enumerate(data_loader):
+			images = sample['image'].float()
+			gaze = sample['gaze'].float()
+
+			# Save the reconstructed images
+			if i % 100 == 0 :
+				reconst_images, _, _ = betavae(fixed_x)
+				reconst_images = reconst_images.view(-1, img_depth, img_dim, img_dim).cpu().data
+				orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
+				ri = torch.cat( [orimg, reconst_images], dim=2)
+				if stacking :
+					ri = reconst_images.view( (-1, 1, img_depth*img_dim, img_dim) )
+				torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+offset+1) ) )
+				
+			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) )#.float()
+			gaze = Variable( gaze)
+
+			if use_cuda :
+				images = images.cuda() 
+				gaze = gaze.cuda()
+
+			out, mu, log_var = betavae(images)
+			
+
+			mu_mean += torch.mean(mu.data,dim=0)
+			sigma_mean += torch.mean( torch.sqrt( torch.exp(log_var.data) ), dim=0 )
+
+			# Compute :
+			#reconstruction loss :
+			reconst_loss = F.binary_cross_entropy( out, images, size_average=False)
+			# expected log likelyhood :
+			try :
+				#expected_log_lik = torch.mean( Bernoulli( out.view((-1)) ).log_prob( images.view((-1)) ) )
+				expected_log_lik = torch.mean( Bernoulli( out ).log_prob( images ) )
+			except Exception as e :
+				print(e)
+				expected_log_lik = Variable(torch.ones(1).cuda())
+			
+			# kl divergence :
+			kl_divergence = 0.5 * torch.mean( torch.sum( (mu**2 + torch.exp(log_var) - log_var -1), dim=1) )
+			# ELBO :
+			elbo = expected_log_lik - betavae.beta * kl_divergence
+			
+
+			#--------------------------------------------
+			# MODEL 
+			#--------------------------------------------
+			# TOTAL LOSS :
+			total_loss = reconst_loss + betavae.beta*kl_divergence
+			# Backprop + Optimize :
+			optimizers['model'].zero_grad()
+			total_loss.backward()
+			optimizers['model'].step()
+
+			#--------------------------------------------
+			#--------------------------------------------
+
+			output_gaze = gazehead(mu)
+
+			#--------------------------------------------
+			# GazeHead : 
+			#--------------------------------------------
+			# TOTAL LOSS :
+			gh_crit = nn.MSELoss()
+			gh_total_loss = gh_crit(gaze,output_gaze) 
+			# Backprop + Optimize :
+			optimizers['head'].zero_grad()
+			gh_total_loss.backward()
+			optimizers['head'].step()
+			
+			#--------------------------------------------
+			#--------------------------------------------
+
+			# LOGS :
+			error = output_gaze.cpu().data-gaze.cpu().data
+			dist = torch.zeros( (error.size()[0],) )
+			for j in range( dist.size()[0] ) :
+				val = math.sqrt( error[j][0]**2 + error[j][1]**2 )
+				dist[j] = val
+			maxdist = math.sqrt( 0.35**2 + 0.35**2 )
+			meanerror = (dist/(maxdist) ).mean()*100.0
+			cum_merr = (cum_merr*i + meanerror)/(i+1)
+
+			stderror = pow( ((dist/maxdist)*100.0-meanerror), 2.0).mean()
+			cum_stderr = (cum_stderr + stderror)/(2)
+
+			acc = (dist <= maxdist*0.1)
+			acc = acc.numpy().mean()*100.0
+			cum_acc = (cum_acc*i + acc)/(i+1)
+			
+
+			del images
+			
+			epoch_loss += gh_total_loss.cpu().data[0]
+
+			if i % 10 == 0:
+			    print ("Epoch[%d/%d], Step [%d/%d], VAE Total Loss: %.4f, "
+			           "Reconst Loss: %.4f, KL Div: %.7f, E[ |~| p(x|theta)]: %.7f " 
+			           %(epoch+1, nbr_epoch, i+1, iter_per_epoch, total_loss.data[0], 
+			             reconst_loss.data[0], kl_divergence.data[0],expected_log_lik.exp().data[0]) )
+			    print('Gaze:{:.4f} : Acc : {:.2f} % : Mean Error : {:.2f} % // Std error : {:.2f} %'.format( gh_total_loss.data[0], cum_acc,cum_merr,cum_stderr))
+					
+
+		if best_loss is None :
+			#first validation : let us set the initialization but not save it :
+			best_loss = epoch_loss
+			model_best_model_wts = betavae.state_dict()
+			gh_best_model_wts = gazehead.state_dict()
+			# save best model weights :
+			torch.save( model_best_model_wts, os.path.join(SAVE_PATH,'weights') )
+			torch.save( gh_best_model_wts, gazehead.SAVE_PATH )
+			print('Model VAE saved at : {}'.format(os.path.join(SAVE_PATH,'weights')) )
+			print('Model GazeHead saved at : {}'.format( gazehead.SAVE_PATH ) )
+		
+		elif epoch_loss < best_loss:
+			best_loss = epoch_loss
+			model_best_model_wts = betavae.state_dict()
+			gh_best_model_wts = gazehead.state_dict()
+			# save best model weights :
+			torch.save( model_best_model_wts, os.path.join(SAVE_PATH,'weights') )
+			torch.save( gh_best_model_wts, gazehead.SAVE_PATH )
+			print('Model VAE saved at : {}'.format(os.path.join(SAVE_PATH,'weights')) )
+			print('Model GazeHead saved at : {}'.format( gazehead.SAVE_PATH ) )
+		
 
 
 
@@ -463,6 +705,7 @@ if __name__ == '__main__' :
 	parser.add_argument('--query',action='store_true',default=False)
 	parser.add_argument('--evaluate',action='store_true',default=False)
 	parser.add_argument('--stacked',action='store_true',default=False)
+	parser.add_argument('--train_head',action='store_true',default=False)
 	parser.add_argument('--offset', type=int, default=0)
 	parser.add_argument('--batch', type=int, default=32)
 	parser.add_argument('--epoch', type=int, default=100)
@@ -472,7 +715,9 @@ if __name__ == '__main__' :
 
 	if args.train :
 		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
-	
+	else if args.train_head :
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, train_head=True)
+
 	if args.query :
 		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
 

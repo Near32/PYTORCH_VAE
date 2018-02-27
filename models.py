@@ -739,6 +739,7 @@ class VAE(nn.Module) :
 class GazeHead(nn.Module) :
 	def __init__(self, outdim,nbr_latents=10):
 		super(GazeHead,self).__init__()
+		self.SAVE_PATH = './gazehead.weights'
 		self.outdim = outdim
 		self.nbr_latents = nbr_latents
 
@@ -754,6 +755,9 @@ class GazeHead(nn.Module) :
 		out = self.fc3( out)
 
 		return out
+
+	def setSAVE_PATH(path) :
+		self.SAVE_PATH = path
 
 		
 def test_mnist():
