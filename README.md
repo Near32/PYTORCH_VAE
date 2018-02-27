@@ -20,6 +20,10 @@ git clone https://github.com/deepmind/dsprites-dataset.git
 In order to use the XYS-latent dataset, you need to :
 
 1. download it [here](https://www.dropbox.com/s/luexrritqj4hv5r/dataset-XYS-latent.tar.gz?dl=0)
+```
+wget https://www.dropbox.com/s/luexrritqj4hv5r/dataset-XYS-latent.tar.gz
+tar xzvf dataset-XYS-latent.tar.gz
+```
 2. extract it at the root of this repository's folder.
 
 
