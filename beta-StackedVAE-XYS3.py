@@ -19,7 +19,7 @@ from datasetXYS import load_dataset_XYS
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3, train_head=False):	
+def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3, beta=1.0, train_head=False):	
 	size = 256
 	dataset = load_dataset_XYS(img_dim=size,stacking=stacking)
 
@@ -39,30 +39,31 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 	beta = 5000e0
 	betavae = betaVAEXYS(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	'''
-	'''
+	
 	frompath = True
 	img_dim = size
 	img_depth=3
 	conv_dim = 8#32
 	global use_cuda
 	net_depth = 5
-	beta = 1000e0
+	beta = beta
 	betavae = betaVAEXYS2(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	'''
+
 	frompath = True
 	img_dim = size
 	img_depth=3
 	conv_dim = 8#32
 	global use_cuda
 	net_depth = 6
-	beta = 1000e0
+	beta = beta
 	betavae = betaVAEXYS3(beta=beta,net_depth=net_depth,z_dim=z_dim,img_dim=img_dim,img_depth=img_depth,conv_dim=conv_dim, use_cuda=use_cuda)
 	print(betavae)
-
+	'''
 		
 	# LOADING :
-
-	path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	path = 'test2--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	#path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
 	if stacking :
 		path+= '-stacked'
 
@@ -87,21 +88,21 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 	if train_head :
 		gazehead = GazeHead(outdim=2, nbr_latents=z_dim, use_cuda=use_cuda)
 
-	# LOADING :
-	gh_path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
-	if stacking :
-		gh_path+= '-stacked'
+		# LOADING :
+		gh_path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+		if stacking :
+			gh_path+= '-stacked'
 
-	if not os.path.exists( './beta-data/{}/'.format(gh_path) ) :
-		os.mkdir('./beta-data/{}/'.format(gh_path))
-	gh_SAVE_PATH = os.path.join('./beta-data/{}'.format(path), 'gazehead.weights') 
-	gazehead.setSAVE_PATH(gh_SAVE_PATH)
-	
-	try :
-		gazehead.load_state_dict( torch.load( gh_SAVE_PATH) )
-		print('GAZE HEAD NET LOADING : OK.')
-	except Exception as e :
-		print('EXCEPTION : GAZE HEAD NET LOADING : {}'.format(e) )	
+		if not os.path.exists( './beta-data/{}/'.format(gh_path) ) :
+			os.mkdir('./beta-data/{}/'.format(gh_path))
+		gh_SAVE_PATH = os.path.join('./beta-data/{}'.format(path), 'gazehead.weights') 
+		gazehead.setSAVE_PATH(gh_SAVE_PATH)
+		
+		try :
+			gazehead.load_state_dict( torch.load( gh_SAVE_PATH) )
+			print('GAZE HEAD NET LOADING : OK.')
+		except Exception as e :
+			print('EXCEPTION : GAZE HEAD NET LOADING : {}'.format(e) )	
 
 
 
@@ -713,15 +714,16 @@ if __name__ == '__main__' :
 	parser.add_argument('--epoch', type=int, default=100)
 	parser.add_argument('--latent', type=int, default=3)
 	parser.add_argument('--lr', type=float, default=1e-4)
+	parser.add_argument('--beta', type=float, default=1e0)
 	args = parser.parse_args()
 
 	if args.train :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta)
 	elif args.train_head :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, train_head=True)
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta, train_head=True)
 
 	if args.query :
-		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
+		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta)
 
 	if args.evaluate :
-		setting(train=False,evaluate=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
+		setting(train=False,evaluate=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta)
