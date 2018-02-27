@@ -737,26 +737,30 @@ class VAE(nn.Module) :
 
 
 class GazeHead(nn.Module) :
-	def __init__(self, outdim,nbr_latents=10):
+	def __init__(self, outdim,nbr_latents=10, use_cuda=True):
 		super(GazeHead,self).__init__()
 		self.SAVE_PATH = './gazehead.weights'
 		self.outdim = outdim
 		self.nbr_latents = nbr_latents
+		self.use_cuda = use_cuda
 
 		self.fc1 = nn.Linear(self.nbr_latents, 256)
-		self.bn1 = nn.BatchNorm1d(128)
-		self.fc2 = nn.Linear(128, 64)
-		self.bn2 = nn.BatchNorm1d(64)
-		self.fc3 = nn.Linear(64, self.outdim)
+		self.bn1 = nn.BatchNorm1d(256)
+		self.fc2 = nn.Linear(256, 128)
+		self.bn2 = nn.BatchNorm1d(128)
+		self.fc3 = nn.Linear(128, self.outdim)
+
+		if self.use_cuda :
+			self = self.cuda()
 
 	def forward(self, x) :
-		out = F.leaky_relu( self.bn1( self.fc1( out) ) )
+		out = F.leaky_relu( self.bn1( self.fc1( x) ) )
 		out = F.leaky_relu( self.bn2( self.fc2( out) ) )
 		out = self.fc3( out)
 
 		return out
 
-	def setSAVE_PATH(path) :
+	def setSAVE_PATH(self,path) :
 		self.SAVE_PATH = path
 
 		

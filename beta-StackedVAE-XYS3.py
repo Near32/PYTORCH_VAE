@@ -9,6 +9,7 @@ from torchvision import datasets, transforms
 from skimage import io, transform
 import numpy as np
 
+import math
 from PIL import Image
 
 
@@ -84,7 +85,8 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 
 	# GAZE HEAD :
 	if train_head :
-		gazehead = GazeHead(outdim=2, nbr_latent=z_dim)
+		gazehead = GazeHead(outdim=2, nbr_latents=z_dim, use_cuda=use_cuda)
+
 	# LOADING :
 	gh_path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
 	if stacking :
@@ -212,7 +214,7 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 
 		for i, sample in enumerate(data_loader):
 			images = sample['image'].float()
-			gaze = sample['gaze'].float()
+			gaze = sample['landmarks'].float()
 
 			# Save the reconstructed images
 			if i % 100 == 0 :
@@ -225,7 +227,7 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 				torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+offset+1) ) )
 				
 			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) )#.float()
-			gaze = Variable( gaze)
+			gaze = Variable( gaze. view((-1,2) ))
 
 			if use_cuda :
 				images = images.cuda() 
@@ -261,7 +263,7 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 			total_loss = reconst_loss + betavae.beta*kl_divergence
 			# Backprop + Optimize :
 			optimizers['model'].zero_grad()
-			total_loss.backward()
+			total_loss.backward(retain_graph=True)
 			optimizers['model'].step()
 
 			#--------------------------------------------
@@ -274,7 +276,7 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 			#--------------------------------------------
 			# TOTAL LOSS :
 			gh_crit = nn.MSELoss()
-			gh_total_loss = gh_crit(gaze,output_gaze) 
+			gh_total_loss = gh_crit(output_gaze,gaze) 
 			# Backprop + Optimize :
 			optimizers['head'].zero_grad()
 			gh_total_loss.backward()
@@ -715,7 +717,7 @@ if __name__ == '__main__' :
 
 	if args.train :
 		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent)
-	else if args.train_head :
+	elif args.train_head :
 		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, train_head=True)
 
 	if args.query :
