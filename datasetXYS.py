@@ -394,6 +394,18 @@ def load_dataset_XYS(img_dim=224,stacking=False) :
 	return datasets
 
 
+def load_dataset_XYSM10(img_dim=224,stacking=False) :
+	ann_dir = './dataset-XYSM10-latent/annotations'
+	img_dir = './dataset-XYSM10-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=True)
+	
+	return datasets
+
+
 def generateIDX(dataset) :
 	from math import floor
 	nbrel = len(dataset.parsedAnnotations)

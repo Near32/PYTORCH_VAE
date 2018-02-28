@@ -14,14 +14,18 @@ from PIL import Image
 
 
 from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, betaVAEXYS2, betaVAEXYS3, Bernoulli, GazeHead
-from datasetXYS import load_dataset_XYS
+from datasetXYS import load_dataset_XYS, load_dataset_XYSM10
 
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3, beta=1.0, train_head=False):	
+def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3, beta=1.0, train_head=False, data='XYS'):	
 	size = 256
-	dataset = load_dataset_XYS(img_dim=size,stacking=stacking)
+	
+	if 'XYSM10' in data :
+		dataset = load_dataset_XYSM10(img_dim=size,stacking=False) 
+	else :
+		dataset = load_dataset_XYS(img_dim=size,stacking=stacking)
 
 	# Data loader
 	data_loader = torch.utils.data.DataLoader(dataset=dataset,
@@ -62,7 +66,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 		
 	# LOADING :
 	#path = 'test2--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
-	path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	path = 'XYSM10--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
 	if stacking :
 		path+= '-stacked'
 
@@ -88,7 +92,7 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 		gazehead = GazeHead(outdim=2, nbr_latents=z_dim, use_cuda=use_cuda)
 
 		# LOADING :
-		gh_path = 'test3--XYS--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+		gh_path = 'XYSM10--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
 		if stacking :
 			gh_path+= '-stacked'
 
@@ -715,15 +719,18 @@ if __name__ == '__main__' :
 	parser.add_argument('--latent', type=int, default=3)
 	parser.add_argument('--lr', type=float, default=1e-4)
 	parser.add_argument('--beta', type=float, default=1e0)
+	parser.add_argument('--data', type=str, default='XYS')
 	args = parser.parse_args()
 
+	print(args)
+
 	if args.train :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta)
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta, data=args.data)
 	elif args.train_head :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta, train_head=True)
+		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta, train_head=True, data=args.data)
 
 	if args.query :
-		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta)
+		setting(train=False,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta, data=args.data)
 
 	if args.evaluate :
 		setting(train=False,evaluate=True,nbr_epoch=args.epoch,stacking=args.stacked,lr=args.lr,z_dim=args.latent, beta=args.beta)
