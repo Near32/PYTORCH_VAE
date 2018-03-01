@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 import numpy as np
+from math import floor
 
 class Distribution(object) :
 	def sample(self) :
@@ -764,7 +765,7 @@ class betaVAEXYS3(nn.Module) :
 
 class STNbasedEncoderXYS3(STNbasedNet) :
 	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32, nbr_stn=3, stn_stack_input=False ) :
-		super(EncoderXYS3,self).__init__(input_dim=img_dim, input_depth=img_depth, nbr_stn=nbr_stn, stn_stack_input=stn_stack_input)
+		super(STNbasedEncoderXYS3,self).__init__(input_dim=img_dim, input_depth=img_depth, nbr_stn=nbr_stn, stn_stack_input=stn_stack_input)
 		
 		self.net_depth = net_depth
 		self.img_depth= img_depth
@@ -797,7 +798,7 @@ class STNbasedEncoderXYS3(STNbasedNet) :
 		self.fc3 = nn.Linear(64, self.z_dim)
 
 	def encode(self, x) :
-		x = super(EncoderXYS3,self).forward(x)
+		x = super(STNbasedEncoderXYS3,self).forward(x)
 
 		out = F.leaky_relu( self.cv1(x), 0.15)
 		out = self.d1(out)
