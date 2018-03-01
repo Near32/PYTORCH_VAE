@@ -43,6 +43,81 @@ def deconv( sin, sout,k,stride=2,pad=1,batchNorm=True) :
 		layers.append( nn.BatchNorm2d( sout) )
 	return nn.Sequential( *layers )
 
+class STNbasedNet(nn.Module):
+    def __init__(self, input_dim=256, input_depth=1, nbr_stn=3, stn_stack_input=False):
+        super(STNbasedNet, self).__init__()
+
+        self.input_dim = input_dim
+        self.input_depth = input_depth
+        self.nbr_stn = nbr_stn
+        self.stn_stack_input=stn_stack_input
+
+        # Spatial transformer localization-network
+        stnloc = []
+        dim = self.input_dim
+        pad = 0
+        stride = 1
+        k=7
+        stnloc.append( nn.Conv2d(self.input_depth, 8, kernel_size=k, padding=pad, stride=stride) )
+        dim = floor( (dim-k+2*pad)/stride +1 )
+        k=2
+        stride = 2
+        stnloc.append( nn.MaxPool2d(k, stride=stride) )
+        dim = floor( (dim-k+2*pad)/stride +1 )
+        stnloc.append( nn.ReLU(True) )
+        k=5
+        stride=1
+        stnloc.append( nn.Conv2d(8, 16, kernel_size=k, padding=pad, stride=stride) )
+        dim = floor( (dim-k+2*pad)/stride +1 )
+        k=2
+        stride = 2
+        stnloc.append( nn.MaxPool2d(k, stride=stride) )
+        dim = floor( (dim-k+2*pad)/stride +1 )
+        stnloc.append( nn.ReLU(True) )
+        self.localization = nn.Sequential( *stnloc)
+        
+        #print('DIM OUTPUT : {}'.format(dim) )
+
+        # Regressor for the 3 * 2 affine matrixes :
+        self.fc_loc = nn.Sequential(
+            nn.Linear(16 * (dim**2), 128),
+            nn.ReLU(True),
+            nn.Linear(128, self.nbr_stn * 3 * 2)
+        )
+
+        # Initialize the weights/bias with identity transformation
+        self.fc_loc[2].weight.data.fill_(0)
+        self.fc_loc[2].bias.data = torch.FloatTensor( [1, 0, 0, 0, 1, 0]*self.nbr_stn ).view((-1))
+
+    # Spatial transformer network forward function
+    def stn(self, x):
+        batch_size = x.size()[0]
+        xs = self.localization(x)
+        xs = xs.view(batch_size,-1)
+        theta = self.fc_loc(xs)
+        theta = theta.view(batch_size,self.nbr_stn, 2, 3)
+
+        xd = []
+        for i in range(self.nbr_stn) :
+            thetad = theta[:,i,:,:].contiguous()
+            grid = F.affine_grid(thetad, x.size())
+            xd.append( F.grid_sample(x, grid) )
+
+        if self.stn_stack_input :
+            xd.append( x)
+
+        xd = torch.cat( xd, dim=1)
+        
+        return xd
+
+    def forward(self, x):
+        batch_size = x.size()[0]
+        # transform the input
+        x = self.stn(x)
+
+        return x
+
+
 class Decoder(nn.Module) :
 	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3 ) :
 		super(Decoder,self).__init__()
@@ -653,6 +728,7 @@ class EncoderXYS3(nn.Module) :
 		return num_features
 
 
+
 class betaVAEXYS3(nn.Module) :
 	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
 		super(betaVAEXYS3,self).__init__()
@@ -685,6 +761,110 @@ class betaVAEXYS3(nn.Module) :
 		out = self.decoder(z)
 
 		return out, mu, log_var
+
+class STNbasedEncoderXYS3(STNbasedNet) :
+	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32, nbr_stn=3, stn_stack_input=False ) :
+		super(EncoderXYS3,self).__init__(input_dim=img_dim, input_depth=img_depth, nbr_stn=nbr_stn, stn_stack_input=stn_stack_input)
+		
+		self.net_depth = net_depth
+		self.img_depth= img_depth
+		self.z_dim = z_dim
+
+		self.stn_output_depth = self.input_depth*self.nbr_stn
+		if self.stn_stack_input :
+			self.stn_output_depth += self.input_depth
+
+		# 224
+		self.cv1 = conv( self.stn_output_depth, 96, 11, batchNorm=False)
+		# 108/109 = E( (224-11+2*1)/2 ) + 1
+		self.d1 = nn.Dropout2d(p=0.8)
+		self.cv2 = conv( 96, 256, 5)
+		# 53 / 54
+		self.d2 = nn.Dropout2d(p=0.8)
+		self.cv3 = conv( 256, 384, 3)
+		# 27 / 27
+		self.d3 = nn.Dropout2d(p=0.5)
+		self.cv4 = conv( 384, 64, 1)
+		# 15
+		self.d4 = nn.Dropout2d(p=0.5)
+		self.fc = conv( 64, 64, 4, stride=1,pad=0, batchNorm=False)
+		# 12
+		#self.fc1 = nn.Linear(64 * (12**2), 128)
+		self.fc1 = nn.Linear(64 * (14**2), 128)
+		self.bn1 = nn.BatchNorm1d(128)
+		self.fc2 = nn.Linear(128, 64)
+		self.bn2 = nn.BatchNorm1d(64)
+		self.fc3 = nn.Linear(64, self.z_dim)
+
+	def encode(self, x) :
+		x = super(EncoderXYS3,self).forward(x)
+
+		out = F.leaky_relu( self.cv1(x), 0.15)
+		out = self.d1(out)
+		out = F.leaky_relu( self.cv2(out), 0.15)
+		out = self.d2(out)
+		out = F.leaky_relu( self.cv3(out), 0.15)
+		out = self.d3(out)
+		out = F.leaky_relu( self.cv4(out), 0.15)
+		out = self.d4(out)
+		out = F.leaky_relu( self.fc(out))
+		#print(out.size())
+		out = out.view( -1, self.num_flat_features(out) )
+		#print(out.size())
+		out = F.leaky_relu( self.bn1( self.fc1( out) ), 0.15 )
+		out = F.leaky_relu( self.bn2( self.fc2( out) ), 0.15)
+		out = F.relu(self.fc3( out) )
+
+
+		return out
+
+
+	def forward(self,x) :
+		return self.encode(x)
+
+	def num_flat_features(self, x) :
+		size = x.size()[1:]
+		# all dim except the batch dim...
+		num_features = 1
+		for s in size :
+			num_features *= s
+		return num_features
+
+
+class STNbasedBetaVAEXYS3(nn.Module) :
+	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
+		super(STNbasedBetaVAEXYS3,self).__init__()
+		self.encoder = STNbasedEncoderXYS3(z_dim=2*z_dim, img_depth=img_depth, img_dim=img_dim, conv_dim=conv_dim,net_depth=net_depth)
+		self.decoder = DecoderXYS3(z_dim=z_dim, img_dim=img_dim, img_depth=img_depth, net_depth=net_depth)
+
+		self.z_dim = z_dim
+		self.img_dim=img_dim
+		self.img_depth=img_depth
+		
+		self.beta = beta
+		self.use_cuda = use_cuda
+
+		if self.use_cuda :
+			self = self.cuda()
+
+	def reparameterize(self, mu,log_var) :
+		eps = torch.randn( (mu.size()[0], mu.size()[1]) )
+		veps = Variable( eps)
+		#veps = Variable( eps, requires_grad=False)
+		if self.use_cuda :
+			veps = veps.cuda()
+		z = mu + veps * torch.exp( log_var/2 )
+		return z
+
+	def forward(self,x) :
+		h = self.encoder( x)
+		mu, log_var = torch.chunk(h, 2, dim=1 )
+		z = self.reparameterize( mu,log_var)
+		out = self.decoder(z)
+
+		return out, mu, log_var
+
+
 
 class Rescale(object) :
 	def __init__(self, output_size) :
