@@ -181,6 +181,17 @@ class DatasetGazeRecognition(Dataset) :
 		# -2 : data2loc : transform the data list of dictionnaries into usable numpy outputs  
 		# -1 : ToTensor
 
+		self.idxModels = dict()
+		for idx in range( len(self) ) :
+			model = self.parsedAnnotations[idx]['model']
+			if not( model in self.idxModel.keys() ) :
+				self.idxModels[model] = list()
+			self.idxModels[model].append(idx)
+
+		for model in self.idxModels.keys() :
+			print('Model : {} :: {} pictures.'.format(model, len(self.idxModels[model]) ) )
+
+
 	def __len__(self) :
 		return len(self.parsedAnnotations)
 
