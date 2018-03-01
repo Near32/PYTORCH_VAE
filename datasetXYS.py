@@ -183,8 +183,8 @@ class DatasetGazeRecognition(Dataset) :
 
 		self.idxModels = dict()
 		for idx in range( len(self) ) :
-			model = self.parsedAnnotations[idx]['model']
-			if not( model in self.idxModel.keys() ) :
+			model = self.parsedAnnotations[idx]['data']['model']
+			if not( model in self.idxModels.keys() ) :
 				self.idxModels[model] = list()
 			self.idxModels[model].append(idx)
 
