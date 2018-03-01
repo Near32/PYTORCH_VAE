@@ -398,7 +398,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			var_z0 = torch.zeros(nbr_steps, z_dim)
 			val = mu_mean[latent]-sigma_mean[latent]
 			step = 2.0*sigma_mean[latent]/nbr_steps
-			print(latent,mu_mean[latent],step)
+			print(latent,mu_mean[latent]-sigma_mean[latent],mu_mean[latent],mu_mean[latent]+sigma_mean[latent])
 			for i in range(nbr_steps) :
 				var_z0[i] = mu_mean
 				var_z0[i][latent] = val
