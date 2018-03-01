@@ -19,7 +19,7 @@ from datasetXYS import load_dataset_XYS, load_dataset_XYSM10
 use_cuda = True
 
 
-def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3, beta=1.0, train_head=False, data='XYS'):	
+def setting(args,nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stacking=False,lr = 1e-5,z_dim = 3, beta=1.0, train_head=False, data='XYS'):	
 	size = 256
 	
 	if 'XYSM10' in data :
@@ -121,7 +121,10 @@ def setting(nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False,stac
 		if evaluate :
 			evaluate_disentanglement(betavae, dataset, nbr_epoch=nbr_epoch)
 		else :
-			query_XYS(betavae, data_loader,path)
+			if args.querySTN :
+				query_STN(betavae, data_loader,path)
+			else :
+				query_XYS(betavae, data_loader,path)
 
 
 
@@ -562,7 +565,37 @@ def query_XYS(betavae,data_loader,path):
 	orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
 	ri = torch.cat( [orimg, reconst_images], dim=2)
 	torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/query.png'.format(path ) )
+
+
+def query_STN(betavae,data_loader,path):
+	global use_cuda
+
+	z_dim = betavae.z_dim
+	img_depth=betavae.img_depth
+	img_dim = betavae.img_dim
 	
+	data_iter = iter(data_loader)
+	iter_per_epoch = len(data_loader)
+
+	# Debug :
+	# fixed inputs for debugging
+	sample = next(data_iter)
+	fixed_x, _ = sample['image'], sample['landmarks']
+	batch_size = fixed_x.size()[0]
+
+	fixed_x = fixed_x.view( (-1, img_depth, img_dim, img_dim) )
+	torchvision.utils.save_image(fixed_x.cpu(), './beta-data/{}/real_images_querySTN.png'.format(path))
+	
+	fixed_x = Variable(fixed_x.view(fixed_x.size(0), img_depth, img_dim, img_dim)).float()
+	if use_cuda :
+		fixed_x = fixed_x.cuda()
+
+	stn_output = betavae.encoder.stn(fixed_x)
+	stn_output = stn_output.view(batch_size, img_depth, -1, img_dim).cpu().data
+	orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
+	ri = torch.cat( [orimg, stn_output], dim=2)
+	torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
+
 
 def generateTarget(latent_dim=3,idx_latent=0, batch_size=8 ) :
 	target = torch.zeros( (1, latent_dim))
@@ -705,6 +738,7 @@ if __name__ == '__main__' :
 	parser = argparse.ArgumentParser(description='beta-VAE')
 	parser.add_argument('--train',action='store_true',default=False)
 	parser.add_argument('--query',action='store_true',default=False)
+	parser.add_argument('--querySTN',action='store_true',default=False)
 	parser.add_argument('--evaluate',action='store_true',default=False)
 	parser.add_argument('--train_head',action='store_true',default=False)
 	parser.add_argument('--offset', type=int, default=0)
@@ -719,12 +753,14 @@ if __name__ == '__main__' :
 	print(args)
 
 	if args.train :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,lr=args.lr,z_dim=args.latent, beta=args.beta, data=args.data)
+		setting(args,offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,lr=args.lr,z_dim=args.latent, beta=args.beta, data=args.data)
 	elif args.train_head :
-		setting(offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,lr=args.lr,z_dim=args.latent, beta=args.beta, train_head=True, data=args.data)
+		setting(args,offset=args.offset,batch_size=args.batch,train=True,nbr_epoch=args.epoch,lr=args.lr,z_dim=args.latent, beta=args.beta, train_head=True, data=args.data)
 
 	if args.query :
-		setting(train=False,lr=args.lr,z_dim=args.latent, beta=args.beta, data=args.data)
+		setting(args,train=False,lr=args.lr,z_dim=args.latent, beta=args.beta, data=args.data)
+	elif args.querySTN :
+		setting(args,train=False,lr=args.lr,z_dim=args.latent, beta=args.beta, data=args.data)
 
 	if args.evaluate :
-		setting(train=False,evaluate=True,nbr_epoch=args.epoch,lr=args.lr,z_dim=args.latent, beta=args.beta)
+		setting(args,train=False,evaluate=True,nbr_epoch=args.epoch,lr=args.lr,z_dim=args.latent, beta=args.beta)
