@@ -92,7 +92,7 @@ class STNbasedNet(nn.Module):
         #self.fc_loc[2].weight.data += torch.rand( self.fc_loc[2].weight.size() ) * 1e-10
         #init_bias = torch.FloatTensor( [1.0, 0, 0.0, 0, 1.0, 0.0]).view((1,-1))
         init_bias = torch.FloatTensor( [1, 0, 1, 0] ).view((1,-1))
-		for i in range(self.nbr_stn-1 ) :
+        for i in range(self.nbr_stn-1 ) :
         	#r = torch.rand( (1,6)) * 1e-10
         	r = torch.rand( (1,4)) * 1e-10
         	#ib = torch.FloatTensor( [0.5, 0, 0.0, 0, 0.5, 0.0]).view((1,-1))
