@@ -45,7 +45,7 @@ def deconv( sin, sout,k,stride=2,pad=1,batchNorm=True) :
 	return nn.Sequential( *layers )
 
 class STNbasedNet(nn.Module):
-    def __init__(self, input_dim=256, input_depth=1, nbr_stn=3, stn_stack_input=False):
+    def __init__(self, input_dim=256, input_depth=1, nbr_stn=2, stn_stack_input=True):
         super(STNbasedNet, self).__init__()
 
         self.input_dim = input_dim
@@ -88,7 +88,14 @@ class STNbasedNet(nn.Module):
 
         # Initialize the weights/bias with identity transformation
         self.fc_loc[2].weight.data.fill_(0)
-        self.fc_loc[2].bias.data = torch.FloatTensor( [1, 0, 0, 0, 1, 0]*self.nbr_stn ).view((-1))
+        #self.fc_loc[2].weight.data += torch.rand( self.fc_loc[2].weight.size() ) * 1e-10
+        init_bias = torch.FloatTensor( [1.0, 0, 0.0, 0, 1.0, 0.0]).view((1,-1))
+        for i in range(self.nbr_stn-1 ) :
+        	r = torch.rand( (1,6)) * 1e-10
+        	ib = torch.FloatTensor( [0.5, 0, 0.0, 0, 0.5, 0.0]).view((1,-1))
+        	#ib += r
+        	init_bias = torch.cat( [init_bias, ib], dim=0)
+        self.fc_loc[2].bias.data = init_bias.view((-1))
 
     # Spatial transformer network forward function
     def stn(self, x):
@@ -764,7 +771,7 @@ class betaVAEXYS3(nn.Module) :
 		return out, mu, log_var
 
 class STNbasedEncoderXYS3(STNbasedNet) :
-	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32, nbr_stn=3, stn_stack_input=False ) :
+	def __init__(self,net_depth=3, img_dim=128, img_depth=3, conv_dim=64, z_dim=32, nbr_stn=2, stn_stack_input=True ) :
 		super(STNbasedEncoderXYS3,self).__init__(input_dim=img_dim, input_depth=img_depth, nbr_stn=nbr_stn, stn_stack_input=stn_stack_input)
 		
 		self.net_depth = net_depth

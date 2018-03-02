@@ -77,13 +77,23 @@ def setting(args,nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False
 	
 	
 	SAVE_PATH = './beta-data/{}'.format(path) 
-
+	path1 = os.path.join(SAVE_PATH,'weights')
+	path2 = os.path.join(SAVE_PATH,'temp.weights')
+	if args.querySTN or args.query :
+		path2 = os.path.join(SAVE_PATH,'weights')
+		path1 = os.path.join(SAVE_PATH,'temp.weights')
+		
 	if frompath :
 		try :
-			betavae.load_state_dict( torch.load( os.path.join(SAVE_PATH,'weights')) )
-			print('NET LOADING : OK.')
+			betavae.load_state_dict( torch.load( path1 ) )
+			print('NET LOADING : from {} : OK.'.format(path1) )
 		except Exception as e :
 			print('EXCEPTION : NET LOADING : {}'.format(e) )
+			try :
+				betavae.load_state_dict( torch.load( path2) )
+				print('NET LOADING : from {} : OK.'.format(path2))
+			except Exception as e :
+				print('EXCEPTION : NET LOADING : {}'.format(e) )
 
 	# GAZE HEAD :
 	if train_head :
@@ -188,7 +198,7 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 			var_z0 = torch.zeros(nbr_steps, z_dim)
 			val = mu_mean[latent]-sigma_mean[latent]
 			step = 2.0*sigma_mean[latent]/nbr_steps
-			print(latent,mu_mean[latent],step)
+			print(latent,mu_mean[latent]-sigma_mean[latent],mu_mean[latent],mu_mean[latent]+sigma_mean[latent])
 			for i in range(nbr_steps) :
 				var_z0[i] = mu_mean
 				var_z0[i][latent] = val
@@ -396,7 +406,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			var_z0 = torch.zeros(nbr_steps, z_dim)
 			val = mu_mean[latent]-sigma_mean[latent]
 			step = 2.0*sigma_mean[latent]/nbr_steps
-			print(latent,mu_mean[latent],step)
+			print(latent,mu_mean[latent]-sigma_mean[latent],mu_mean[latent],mu_mean[latent]+sigma_mean[latent])
 			for i in range(nbr_steps) :
 				var_z0[i] = mu_mean
 				var_z0[i][latent] = val
@@ -434,6 +444,10 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 					ri = reconst_images.view( (-1, 1, img_depth*img_dim, img_dim) )
 				torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+offset+1) ) )
 				
+				model_wts = betavae.state_dict()
+				torch.save( model_wts, os.path.join(SAVE_PATH,'temp.weights') )
+				print('Model saved at : {}'.format(os.path.join(SAVE_PATH,'temp.weights')) )
+
 			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) )#.float()
 			
 			if use_cuda :
@@ -591,10 +605,12 @@ def query_STN(betavae,data_loader,path):
 		fixed_x = fixed_x.cuda()
 
 	stn_output = betavae.encoder.stn(fixed_x)
-	stn_output = stn_output.view(batch_size, img_depth, -1, img_dim).cpu().data
-	orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
-	ri = torch.cat( [orimg, stn_output], dim=2)
-	torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
+	stn_output = stn_output.view(-1, img_depth, img_dim, img_dim).cpu().data
+	#stn_output = stn_output.view(batch_size, img_depth, -1, img_dim).cpu().data
+	#orimg = fixed_x.cpu().data.view(-1, img_depth, img_dim, img_dim)
+	#ri = torch.cat( [orimg, stn_output], dim=2)
+	#torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
+	torchvision.utils.save_image(stn_output,'./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
 
 
 def generateTarget(latent_dim=3,idx_latent=0, batch_size=8 ) :

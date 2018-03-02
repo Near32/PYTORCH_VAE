@@ -436,6 +436,10 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 					ri = reconst_images.view( (-1, 1, img_depth*img_dim, img_dim) )
 				torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/{}.png'.format(path,(epoch+offset+1) ) )
 				
+				model_wts = betavae.state_dict()
+				torch.save( model_wts, os.path.join(SAVE_PATH,'temp.weights') )
+				print('Model saved at : {}'.format(os.path.join(SAVE_PATH,'temp.weights')) )
+			
 			images = Variable( (images.view(-1, img_depth,img_dim, img_dim) ) )#.float()
 			
 			if use_cuda :
