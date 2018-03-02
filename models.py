@@ -83,16 +83,20 @@ class STNbasedNet(nn.Module):
         self.fc_loc = nn.Sequential(
             nn.Linear(16 * (dim**2), 128),
             nn.ReLU(True),
-            nn.Linear(128, self.nbr_stn * 3 * 2)
+            #nn.Linear(128, self.nbr_stn * 3 * 2)
+            nn.Linear(128, self.nbr_stn * 2 * 2)
         )
 
         # Initialize the weights/bias with identity transformation
         self.fc_loc[2].weight.data.fill_(0)
         #self.fc_loc[2].weight.data += torch.rand( self.fc_loc[2].weight.size() ) * 1e-10
-        init_bias = torch.FloatTensor( [1.0, 0, 0.0, 0, 1.0, 0.0]).view((1,-1))
-        for i in range(self.nbr_stn-1 ) :
-        	r = torch.rand( (1,6)) * 1e-10
-        	ib = torch.FloatTensor( [0.5, 0, 0.0, 0, 0.5, 0.0]).view((1,-1))
+        #init_bias = torch.FloatTensor( [1.0, 0, 0.0, 0, 1.0, 0.0]).view((1,-1))
+        init_bias = torch.FloatTensor( [1, 0, 1, 0] ).view((1,-1))
+		for i in range(self.nbr_stn-1 ) :
+        	#r = torch.rand( (1,6)) * 1e-10
+        	r = torch.rand( (1,4)) * 1e-10
+        	#ib = torch.FloatTensor( [0.5, 0, 0.0, 0, 0.5, 0.0]).view((1,-1))
+        	ib = torch.FloatTensor( [0.5, 0, 0.5, 0]).view((1,-1))
         	#ib += r
         	init_bias = torch.cat( [init_bias, ib], dim=0)
         self.fc_loc[2].bias.data = init_bias.view((-1))
@@ -103,11 +107,17 @@ class STNbasedNet(nn.Module):
         xs = self.localization(x)
         xs = xs.view(batch_size,-1)
         theta = self.fc_loc(xs)
-        theta = theta.view(batch_size,self.nbr_stn, 2, 3)
+        #theta = theta.view(batch_size,self.nbr_stn, 2, 3)
+        theta = theta.view(batch_size,self.nbr_stn, -1).contiguous()
 
         xd = []
+        zeroft = Variable(torch.zeros((batch_size,1) ) ).cuda()
         for i in range(self.nbr_stn) :
-            thetad = theta[:,i,:,:].contiguous()
+            thetad = theta[:,i,:].contiguous()
+            thetad = thetad.view((batch_size,-1,1))
+            thetad = thetad.contiguous()
+            thetad = torch.cat( [ thetad[:,0], zeroft, thetad[:,1], zeroft, thetad[:,2], thetad[:,3] ], dim=1)
+            thetad = thetad.view((-1,2,3)).contiguous()
             grid = F.affine_grid(thetad, x.size())
             xd.append( F.grid_sample(x, grid) )
 
