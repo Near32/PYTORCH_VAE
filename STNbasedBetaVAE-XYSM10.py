@@ -66,7 +66,7 @@ def setting(args,nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False
 	print(betavae)
 		
 	# LOADING :
-	path = 'XYSM10--STN--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(img_dim,lr,beta,net_depth,z_dim,conv_dim)
+	path = '{}--STN--img{}-lr{}-beta{}-layers{}-z{}-conv{}'.format(args.data,img_dim,lr,beta,net_depth,z_dim,conv_dim)
 	
 	if not os.path.exists( './beta-data/{}/'.format(path) ) :
 		os.mkdir('./beta-data/{}/'.format(path))
@@ -134,13 +134,15 @@ def setting(args,nbr_epoch=100,offset=0,train=True,batch_size=32, evaluate=False
 			if args.querySTN :
 				query_STN(betavae, data_loader,path)
 			else :
-				query_XYS(betavae, data_loader,path)
+				query_XYS(betavae, data_loader,path,args)
 
 
 
 def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,nbr_epoch=100,batch_size=32, offset=0, stacking=False) :
 	global use_cuda
 	
+	train_model_too = False
+
 	z_dim = betavae.z_dim
 	img_depth=betavae.img_depth
 	img_dim = betavae.img_dim
@@ -245,7 +247,11 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 				images = images.cuda() 
 				gaze = gaze.cuda()
 
-			out, mu, log_var = betavae(images)
+			if train_model_too :
+				out, mu, log_var = betavae(images)
+			else :
+				out = images
+				z, mu, log_var = betavae.encode(images)
 			
 
 			mu_mean += torch.mean(mu.data,dim=0)
@@ -267,32 +273,26 @@ def train_model_head(betavae, gazehead, data_loader, optimizers, SAVE_PATH,path,
 			# ELBO :
 			elbo = expected_log_lik - betavae.beta * kl_divergence
 			
-
-			#--------------------------------------------
-			# MODEL 
-			#--------------------------------------------
-			# TOTAL LOSS :
-			total_loss = reconst_loss + betavae.beta*kl_divergence
-			# Backprop + Optimize :
-			optimizers['model'].zero_grad()
-			total_loss.backward(retain_graph=True)
-			optimizers['model'].step()
-
-			#--------------------------------------------
-			#--------------------------------------------
-
 			output_gaze = gazehead(mu)
-
-			#--------------------------------------------
-			# GazeHead : 
+			gh_crit = nn.MSELoss()
+			
 			#--------------------------------------------
 			# TOTAL LOSS :
-			gh_crit = nn.MSELoss()
 			gh_total_loss = gh_crit(output_gaze,gaze) 
+			total_loss = reconst_loss + betavae.beta*kl_divergence + gh_total_loss			
+			#--------------------------------------------
+			#--------------------------------------------
 			# Backprop + Optimize :
 			optimizers['head'].zero_grad()
+			optimizers['model'].zero_grad()
+			
+			if train_model_too :
+				total_loss.backward(retain_graph=True)
+				optimizers['model'].step()
+
 			gh_total_loss.backward()
 			optimizers['head'].step()
+			
 			
 			#--------------------------------------------
 			#--------------------------------------------
@@ -394,7 +394,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 	for epoch in range(nbr_epoch):
 		
 		# Save generated variable images :
-		nbr_steps = 8
+		nbr_steps = args.querySTEPS
 		mu_mean /= batch_size
 		sigma_mean /= batch_size
 		gen_images = torch.ones( (nbr_steps, img_depth, img_dim, img_dim) )
@@ -489,6 +489,14 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			# Backprop + Optimize :
 			optimizer.zero_grad()
 			total_loss.backward()
+
+			#--------------------------
+			#betavae.encoder.localization.zero_grad()
+			#betavae.encoder.fc_loc.zero_grad()
+			nn.utils.clip_grad_norm( betavae.encoder.localization.parameters(), args.clip)
+			nn.utils.clip_grad_norm( betavae.encoder.fc_loc.parameters(), args.clip)
+			#--------------------------
+			
 			optimizer.step()
 
 			del images
@@ -516,7 +524,7 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			print('Model saved at : {}'.format(os.path.join(SAVE_PATH,'weights')) )
 
 
-def query_XYS(betavae,data_loader,path):
+def query_XYS(betavae,data_loader,path,args):
 	global use_cuda
 
 	z_dim = betavae.z_dim
@@ -543,12 +551,12 @@ def query_XYS(betavae,data_loader,path):
 		fixed_x = fixed_x.cuda()
 
 	# variations over the latent variable :
-	sigma_mean = 3.0*torch.ones((z_dim))
+	sigma_mean = args.queryVAR*torch.ones((z_dim))
 	mu_mean = torch.zeros((z_dim))
 
 	# Save generated variable images :
-	nbr_steps = 8
-	gen_images = torch.ones( (8, img_depth, img_dim, img_dim) )
+	nbr_steps = 16
+	gen_images = torch.ones( (nbr_steps, img_depth, img_dim, img_dim) )
 
 	for latent in range(z_dim) :
 		#var_z0 = torch.stack( [mu_mean]*nbr_steps, dim=0)
@@ -611,7 +619,7 @@ def query_STN(betavae,data_loader,path):
 	#ri = torch.cat( [orimg, stn_output], dim=2)
 	#torchvision.utils.save_image(ri,'./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
 	torchvision.utils.save_image(stn_output,'./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
-
+	print('STN sample saved at : ./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
 
 def generateTarget(latent_dim=3,idx_latent=0, batch_size=8 ) :
 	target = torch.zeros( (1, latent_dim))
@@ -764,6 +772,9 @@ if __name__ == '__main__' :
 	parser.add_argument('--lr', type=float, default=1e-4)
 	parser.add_argument('--beta', type=float, default=1e0)
 	parser.add_argument('--data', type=str, default='XYS')
+	parser.add_argument('--queryVAR', type=float, default=3.0)
+	parser.add_argument('--querySTEPS', type=int, default=8)
+	parser.add_argument('--clip', type=float, default=1e-5)
 	args = parser.parse_args()
 
 	print(args)
