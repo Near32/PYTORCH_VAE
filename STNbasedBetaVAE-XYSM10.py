@@ -10,6 +10,7 @@ from skimage import io, transform
 import numpy as np
 
 import math
+from math import floor
 from PIL import Image
 
 
@@ -613,56 +614,45 @@ def query_STN(betavae,data_loader,path):
 	torchvision.utils.save_image(stn_output,'./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
 
 
-def generateTarget(latent_dim=3,idx_latent=0, batch_size=8 ) :
-	target = torch.zeros( (1, latent_dim))
-	target[0,idx_latent] = 1.0
-	target = torch.cat( batch_size*[target], dim=0)
 
-	target = Variable(target)
-	global use_cuda 
-	if use_cuda :
-		target = target.cuda()
-
-	return target
-
-def generatePairs(index) :
-	nbrel = len(index)
+def generateIndex4El(cl_indexes,batch_size) :
+	nbr_class = len(cl_indexes)
+	nbr_el_per_class = [0]*nbr_class
+	nbr_iter_per_class = [0]*nbr_class
+	index4el = list()
 	
-	# if not even :
-	if nbrel % 2 :
-		nbrel -= 1
-		print('NBR ELEMENT : {}'.format(nbrel) )
-		# ditch the last one...
+	for cl,el_cl_indexes in enumerate(cl_indexes) :
+		nbr_el_per_class[cl] = len(el_cl_indexes)
+		nbr_iter_per_class[cl] = floor(nbr_el_per_class[cl]/batch_size)
+		for itera in range(nbr_iter_per_class[cl]) :
+			index4el.append(cl)
+	
+	return index4el
 
-	id1 = []
-	id2 = []
-
-	for i in range( 0, nbrel, 2 ) :
-		id1.append( index[i] )
-		id2.append( index[i+1] )
-
-	return id1, id2
 
 def evaluate_disentanglement(model,dataset,nbr_epoch=20) :
 	from datasetXYS import generateIDX, generateClassifier
 	model.eval()
 
 	global use_cuda
-	lr = 1e-4
+	lr = 1e-2
 	
 	indexes = generateIDX(dataset)
 	nbr_latent = len(indexes)
 	disentanglement_measure = [0.0] * nbr_latent 
 
-	classifier = generateClassifier(input_dim=model.z_dim, output_dim=nbr_latent)
-	if use_cuda :
-		classifier = classifier.cuda()
+	classifiers = []
+	optimizers = []
+	for i in range(nbr_latent) :
+		classifiers.append(  generateClassifier(input_dim=model.z_dim, output_dim=nbr_latent) )
+		if use_cuda :
+			classifiers[-1] = classifiers[-1].cuda()
 
-	optimizer = torch.optim.Adam( classifier.parameters(), lr=lr)
+		optimizers.append( torch.optim.Adagrad( classifiers[-1].parameters(), lr=lr) )
 
-	batch_size = 1
-	iteration_training = 0
-	cum_training_acc = 0.0
+	batch_size = 2*10
+	# Accumulator for the z latent representations of each sample of the dataset :
+	index2z = [None]*len(dataset)
 
 	for phase in ['train','val'] :
 		if phase == 'val' :
@@ -671,82 +661,78 @@ def evaluate_disentanglement(model,dataset,nbr_epoch=20) :
 			nbrepoch = nbr_epoch
 
 		for epoch in range(nbrepoch) :
-			cum_epoch_acc = 0.0
-			iteration_epoch = 0
 
-			for idx_latent in range(3) :
-				index = indexes[idx_latent]
-				
-				nbr_classes = len(index)
-				iteration_latent = 0
+			for idx_latent in range(nbr_latent) :
 				cum_latent_acc = 0.0
-
-				for cl in range(nbr_classes) :
-					#print('CLASS : {} : nbr element = {}'.format(cl,len(index[cl]) ) )
-					index1, index2 = generatePairs(index[cl])
-					nbrel = len(index1)
+				iteration_latent = 0
+				# List of list of elements from the same classes :
+				cl_indexes = indexes[idx_latent]
+				# List of class indexes for every batch of element of the latent :
+				cl_index4el = generateIndex4El(cl_indexes,batch_size)
+				# Shuffled dataset of all the classes that needs to be samples in order to go through the whole dataset :
+				cl_dataloader = torch.utils.data.DataLoader(dataset=cl_index4el,batch_size=1, shuffle=True)
+				
+				for i,cl_sample in enumerate(cl_dataloader) :
+					cl_sample = int(cl_sample[0])
+					# List of indexes of all the elements of the same sampled class :
+					el_cl_index = cl_indexes[cl_sample]
+					# Shuffled dataset of all the element's indexes that have the same sampled class :
+					el_cl_dataloader = torch.utils.data.DataLoader(dataset=el_cl_index,batch_size=batch_size, shuffle=True)
 					
-					print('')
-					#print('IDX LATENT : {} // NBR ELEMENT : {}'.format(idx_latent,nbrel))				
-					
-					for it in range(nbrel) :
-						sample1 = dataset[index1[it]]
-						img1 = sample1['image'].unsqueeze(0)
-						sample2 = dataset[index2[it]]
-						img2 = sample2['image'].unsqueeze(0)
+					for j,el_index_samples in enumerate(el_cl_dataloader) :
+						# Sampling a batch of indexes of element that shares the same class.
+						# Sampling, encoding and summing the elements :
+						z_diff_avg = 0
+						it = 0
+						for index in el_index_samples :
+							
+							it+=1
+							if index2z[index] is None :
+								x_sample = dataset[index]
+								img = x_sample['image'].unsqueeze(0)
+								img = Variable( img ).float()
+								
+								if use_cuda :
+									img = img.cuda() 
+								
+								_, z, _ = model.encode(img1)
+								index2z[index] = z
+							else :
+								z = index2z[index]
 
+							# let us 'diff_sum' :
+							z_diff_avg += pow(-1,it)*z
 
-						#img1 = Variable( (img1.view(-1, model.img_depth, model.img_dim, model.img_dim) ) ).float()
-						#img2 = Variable( (img2.view(-1, model.img_depth, model.img_dim, model.img_dim) ) ).float()
-						img1 = Variable( img1 ).float()
-						img2 = Variable( img2 ).float()
-						
-						if use_cuda :
-							img1 = img1.cuda() 
-							img2 = img2.cuda() 
+						z_diff_avg /= batch_size/2
 
+						# Forward pass :
+						logits = classifiers[idx_latent](z_diff_avg)
 
-						_, mu1, log_var1 = model(img1)
-						_, mu2, log_var2 = model(img2)
-						
-						z_diff = torch.abs(mu2-mu1)
-						#av_z_diff = z_diff/float(nbrel)
-
+						# Loss :
 						target = generateTarget(latent_dim=3, idx_latent=idx_latent, batch_size=1)
-
-						#logits = classifier(av_z_diff)
-						logits = classifier(z_diff)
-
+						loss = F.binary_cross_entropy( logits, target)
 
 						# Accuracy :
 						acc = (logits.cpu().data.max(1)[1] == idx_latent)
 						acc = acc.numpy().mean()*100.0
 						cum_latent_acc = (cum_latent_acc*iteration_latent + acc)/(iteration_latent+1)
 						iteration_latent += 1
-						cum_epoch_acc = (cum_epoch_acc*iteration_epoch + acc)/(iteration_epoch+1)
-						iteration_epoch += 1
-						cum_training_acc = (cum_training_acc*iteration_training + acc)/(iteration_training+1)
-						iteration_training += 1
-
-						print('{} EPOCH : {} :: iteration {}/{} :: Cumulative Accuracy : {} // Cumulative Latent {} Accuracy : {}'.format(phase, epoch, it, nbrel, cum_epoch_acc, idx_latent, cum_latent_acc), end='\r')
-
-
-						# Loss :
-						loss = F.binary_cross_entropy( logits, target)
 						
-						if phase == 'train' :
-							# Training :
-							loss.backward()
-							
-							if iteration_latent % batch_size == 0 :
-								optimizer.step()
-								optimizer.zero_grad()
+						print('{} EPOCH : {} :: iteration {}/{} :: Latent {} Accuracy : {}'.format(phase, epoch, iteration, nbr_iterations, idx_latent, cum_latent_acc), end='\r')
 
-			print('')
-			print('-'*20)
-			print('{} EPOCH : {}/{} :: Cumulative Accuracy : {} // Cumulative Latent {} Accuracy : {}'.format(phase, epoch, nbrepoch, cum_epoch_acc, idx_latent, cum_latent_acc))
-			print('-'*20)
-		
+						# Training :
+						if phase == 'train' :
+							loss.backward()
+							optimizer.step()
+							optimizer.zero_grad()
+
+				print('')
+				print('-'*20)
+				print('{} EPOCH : {} :: iteration {}/{} :: Latent {} Accuracy : {}'.format(phase, epoch, iteration, nbr_iterations, idx_latent, cum_latent_acc), end='\r')
+				print('-'*20)
+			
+
+
 
 
 if __name__ == '__main__' :
