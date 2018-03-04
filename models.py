@@ -91,7 +91,7 @@ class STNbasedNet(nn.Module):
         self.fc_loc[2].weight.data.fill_(0)
         #self.fc_loc[2].weight.data += torch.rand( self.fc_loc[2].weight.size() ) * 1e-10
         #init_bias = torch.FloatTensor( [1.0, 0, 0.0, 0, 1.0, 0.0]).view((1,-1))
-        init_bias = torch.FloatTensor( [1, 0, 1, 0] ).view((1,-1))
+        init_bias = torch.FloatTensor( [0.25, 0, 0.25, 0] ).view((1,-1))
         for i in range(self.nbr_stn-1 ) :
         	#r = torch.rand( (1,6)) * 1e-10
         	r = torch.rand( (1,4)) * 1e-10
@@ -882,6 +882,13 @@ class STNbasedBetaVAEXYS3(nn.Module) :
 
 		return out, mu, log_var
 
+	def encode(self,x) :
+		h = self.encoder( x)
+		mu, log_var = torch.chunk(h, 2, dim=1 )
+		z = self.reparameterize( mu,log_var)
+		
+		return z,mu, log_var
+
 
 
 class Rescale(object) :
@@ -942,19 +949,21 @@ class GazeHead(nn.Module) :
 		self.nbr_latents = nbr_latents
 		self.use_cuda = use_cuda
 
-		self.fc1 = nn.Linear(self.nbr_latents, 256)
-		self.bn1 = nn.BatchNorm1d(256)
-		self.fc2 = nn.Linear(256, 128)
-		self.bn2 = nn.BatchNorm1d(128)
-		self.fc3 = nn.Linear(128, self.outdim)
+		self.fc1 = nn.Linear(self.nbr_latents, 2048)
+		self.bn1 = nn.BatchNorm1d(2048)
+		self.fc2 = nn.Linear(2048, 1024)
+		self.bn2 = nn.BatchNorm1d(1024)
+		self.fc3 = nn.Linear(1024, self.outdim)
 
 		if self.use_cuda :
 			self = self.cuda()
 
 	def forward(self, x) :
-		out = F.leaky_relu( self.bn1( self.fc1( x) ) )
-		out = F.leaky_relu( self.bn2( self.fc2( out) ) )
-		out = self.fc3( out)
+		#out = F.leaky_relu( self.bn1( self.fc1( x) ) )
+		out = F.leaky_relu( self.fc1( x ), 0.15 )
+		#out = F.leaky_relu( self.bn2( self.fc2( out) ) )
+		out = F.leaky_relu( self.fc2( out ), 0.15 )
+		out = 0.5*F.tanh( self.fc3( out) )
 
 		return out
 
