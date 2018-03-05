@@ -16,6 +16,7 @@ from PIL import Image
 
 from models import Rescale, betaVAE, betaVAEdSprite, betaVAEXYS, betaVAEXYS2, betaVAEXYS3, STNbasedBetaVAEXYS3, Bernoulli, GazeHead
 from datasetXYS import load_dataset_XYS, load_dataset_XYSM10
+from utils.statsLogger import statsLogger
 
 use_cuda = True
 
@@ -396,8 +397,10 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 		
 		# Save generated variable images :
 		nbr_steps = args.querySTEPS
-		mu_mean /= batch_size
-		sigma_mean /= batch_size
+		#mu_mean /= batch_size
+		#sigma_mean /= batch_size
+		mu_mean = betavae.encode(fixed_x)[1].cpu().data[0]
+		sigma_mean = 3.0*torch.ones((z_dim))
 		gen_images = torch.ones( (nbr_steps, img_depth, img_dim, img_dim) )
 		if stacking :
 			gen_images = torch.ones( (nbr_steps, 1, img_depth*img_dim, img_dim) )
@@ -422,7 +425,10 @@ def train_model(betavae,data_loader, optimizer, SAVE_PATH,path,nbr_epoch=100,bat
 			gen_images_latent = gen_images_latent.view(-1, img_depth, img_dim, img_dim).cpu().data
 			if stacking :
 				gen_images_latent = gen_images_latent.view( -1, 1, img_depth*img_dim, img_dim)
-			gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
+			if latent == 0 :
+				gen_images = gen_images_latent
+			else :
+				gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
 
 		#torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/dim{}/{}.png'.format(path,latent,(epoch+1)) )
 		torchvision.utils.save_image(gen_images,'./beta-data/{}/gen_images/{}.png'.format(path,(epoch+offset+1)) )
@@ -552,8 +558,12 @@ def query_XYS(betavae,data_loader,path,args):
 		fixed_x = fixed_x.cuda()
 
 	# variations over the latent variable :
-	sigma_mean = args.queryVAR*torch.ones((z_dim))
-	mu_mean = torch.zeros((z_dim))
+	#sigma_mean = args.queryVAR*torch.ones((z_dim))
+	#mu_mean = torch.zeros((z_dim))
+	z, mu, log_sig_sq  = betavae.encode(fixed_x)
+	mu_mean = mu.cpu().data[0]
+	sigma_mean = torch.exp(log_sig_sq).sqrt_().cpu().data[0]
+	print(mu_mean,sigma_mean)
 
 	# Save generated variable images :
 	nbr_steps = 16
@@ -577,7 +587,10 @@ def query_XYS(betavae,data_loader,path,args):
 
 		gen_images_latent = betavae.decoder(var_z0)
 		gen_images_latent = gen_images_latent.view(-1, img_depth, img_dim, img_dim).cpu().data
-		gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
+		if latent == 0 :
+			gen_images = gen_images_latent
+		else :
+			gen_images = torch.cat( [gen_images,gen_images_latent], dim=0)
 
 	#torchvision.utils.save_image(gen_images.data.cpu(),'./beta-data/{}/gen_images/dim{}/{}.png'.format(path,latent,(epoch+1)) )
 	torchvision.utils.save_image(gen_images,'./beta-data/{}/gen_images/query.png'.format(path) )
@@ -623,6 +636,18 @@ def query_STN(betavae,data_loader,path):
 	print('STN sample saved at : ./beta-data/{}/reconst_images/querySTN.png'.format(path ) )
 
 
+def generateTarget(latent_dim=3,idx_latent=0, batch_size=8 ) :
+	target = torch.zeros( (1, latent_dim))
+	target[0,idx_latent] = 1.0
+	target = torch.cat( batch_size*[target], dim=0)
+
+	target = Variable(target)
+	global use_cuda 
+	if use_cuda :
+	       target = target.cuda()
+
+	return target
+
 def generateIndex4El(cl_indexes,batch_size) :
 	nbr_class = len(cl_indexes)
 	nbr_el_per_class = [0]*nbr_class
@@ -642,8 +667,10 @@ def evaluate_disentanglement(model,dataset,nbr_epoch=20) :
 	from datasetXYS import generateIDX, generateClassifier
 	model.eval()
 
+	sl = None#statsLogger(path='./',filename='logs{}.csv'.format(0) )
+		
 	global use_cuda
-	lr = 1e-2
+	lr = 1e-4
 	
 	indexes = generateIDX(dataset)
 	nbr_latent = len(indexes)
@@ -691,30 +718,49 @@ def evaluate_disentanglement(model,dataset,nbr_epoch=20) :
 						# Sampling a batch of indexes of element that shares the same class.
 						# Sampling, encoding and summing the elements :
 						z_diff_avg = 0
+						z_diff = int(0)
 						it = 0
-						for index in el_index_samples :
-							
+						for index in el_index_samples :	
 							it+=1
 							if index2z[index] is None :
 								x_sample = dataset[index]
 								img = x_sample['image'].unsqueeze(0)
 								img = Variable( img ).float()
-								
 								if use_cuda :
 									img = img.cuda() 
-								
-								_, z, _ = model.encode(img1)
+								_, z, _ = model.encode(img)
+								z = z.cpu().data
 								index2z[index] = z
+								
+								# LOGGING :
+								if sl is not None :
+									new = dict()
+									new['ID'] = [index]
+									for dim in range(z.size()[1]) :
+										new['z{}'.format(dim)] = [z[0,dim]]
+									sl.append(new)
+							
 							else :
 								z = index2z[index]
 
 							# let us 'diff_sum' :
-							z_diff_avg += pow(-1,it)*z
+							if isinstance(z_diff,int) and z_diff == 0 :
+									z_diff = z
+							else :
+								z_diff = torch.abs(z_diff-z)
+								z_diff_avg += z_diff
+								z_diff = int(0)
 
+							
+						# Averaging :
 						z_diff_avg /= batch_size/2
+						z_diff_avg = Variable(z_diff_avg)
+						if use_cuda :
+							z_diff_avg = z_diff_avg.cuda()
 
 						# Forward pass :
-						logits = classifiers[idx_latent](z_diff_avg)
+						#logits = classifiers[idx_latent](z_diff_avg)
+						logits = classifiers[0](z_diff_avg)
 
 						# Loss :
 						target = generateTarget(latent_dim=3, idx_latent=idx_latent, batch_size=1)
@@ -726,18 +772,38 @@ def evaluate_disentanglement(model,dataset,nbr_epoch=20) :
 						cum_latent_acc = (cum_latent_acc*iteration_latent + acc)/(iteration_latent+1)
 						iteration_latent += 1
 						
-						print('{} EPOCH : {} :: iteration {}/{} :: Latent {} Accuracy : {}'.format(phase, epoch, iteration, nbr_iterations, idx_latent, cum_latent_acc), end='\r')
+						print('{} EPOCH {} : iteration : {} :: Latent {} Accuracy : {} // z_diff_avg : '.format(phase, epoch, iteration_latent,idx_latent, cum_latent_acc), end='\r')
+						#print(z_diff_avg.cpu().data)
 
 						# Training :
 						if phase == 'train' :
 							loss.backward()
-							optimizer.step()
-							optimizer.zero_grad()
+							#optimizers[idx_latent].step()
+							#optimizers[idx_latent].zero_grad()
+							optimizers[0].step()
+							optimizers[0].zero_grad()
+
+						#print('')
+						#print('-'*20)
+						#print('{} EPOCH : {} :: Latent {} :: class {} :: batch sample {} ends.'.format(phase, epoch, idx_latent, i, j))
+						#print('-'*20)
+
+					#print('')
+					#print('-'*20)
+					#print('{} EPOCH : {} :: Latent {} :: class {} ends.'.format(phase, epoch, idx_latent, i))
+					#print('-'*20)
 
 				print('')
+				print('')
 				print('-'*20)
-				print('{} EPOCH : {} :: iteration {}/{} :: Latent {} Accuracy : {}'.format(phase, epoch, iteration, nbr_iterations, idx_latent, cum_latent_acc), end='\r')
+				print('{} EPOCH : {} :: Latent {} end. Final Accuracy : {}'.format(phase, epoch, idx_latent, cum_latent_acc), end='\r')
 				print('-'*20)
+				
+
+			print('')
+			print('-'*20)
+			print('{} EPOCH : {} end.'.format(phase, epoch))
+			print('-'*20)
 			
 
 
