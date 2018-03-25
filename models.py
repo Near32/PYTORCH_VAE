@@ -124,7 +124,7 @@ class STNbasedNet(nn.Module):
         if self.stn_stack_input :
             xd.append( x)
 
-        xd = torch.cat( xd, dim=1)
+        self.stn_patch = xd = torch.cat( xd, dim=1)
         
         return xd
 
@@ -135,6 +135,8 @@ class STNbasedNet(nn.Module):
 
         return x
 
+    def getSTNpatch(self) :
+    	return self.stn_patch
 
 class Decoder(nn.Module) :
 	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3 ) :
@@ -643,9 +645,14 @@ class betaVAEXYS2(nn.Module) :
 
 
 class DecoderXYS3(nn.Module) :
-	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3 ) :
+	def __init__(self,net_depth=3, z_dim=32, img_dim=128, conv_dim=64,img_depth=3,output_depth=None ) :
 		super(DecoderXYS3,self).__init__()
 		
+		self.img_depth=img_depth
+		self.output_depth = output_depth
+		if self.output_depth is None :
+			self.output_depth = img_depth
+
 		self.net_depth = net_depth
 		self.dcs = []
 		outd = conv_dim*(2**self.net_depth)
@@ -665,8 +672,7 @@ class DecoderXYS3(nn.Module) :
 		self.dcs = nn.Sequential( *self.dcs) 
 			
 		ind = outd
-		self.img_depth=img_depth
-		outd = self.img_depth
+		outd = self.output_depth
 		outdim = img_dim
 		indim = dim
 		pad = 0
@@ -850,14 +856,15 @@ class STNbasedEncoderXYS3(STNbasedNet) :
 
 
 class STNbasedBetaVAEXYS3(nn.Module) :
-	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, conv_dim=64, use_cuda=True, img_depth=3) :
+	def __init__(self, beta=1.0,net_depth=4,img_dim=224, z_dim=32, output_depth=None, conv_dim=64, use_cuda=True, img_depth=3) :
 		super(STNbasedBetaVAEXYS3,self).__init__()
 		self.encoder = STNbasedEncoderXYS3(z_dim=2*z_dim, img_depth=img_depth, img_dim=img_dim, conv_dim=conv_dim,net_depth=net_depth)
-		self.decoder = DecoderXYS3(z_dim=z_dim, img_dim=img_dim, img_depth=img_depth, net_depth=net_depth)
+		self.decoder = DecoderXYS3(z_dim=z_dim, img_dim=img_dim, img_depth=img_depth, net_depth=net_depth,output_depth=output_depth)
 
 		self.z_dim = z_dim
 		self.img_dim=img_dim
 		self.img_depth=img_depth
+		self.output_depth = output_depth
 		
 		self.beta = beta
 		self.use_cuda = use_cuda
