@@ -188,12 +188,65 @@ class DatasetGazeRecognition(Dataset) :
 				self.idxModels[model] = list()
 			self.idxModels[model].append(idx)
 
+		self.idx2model = self.idxModels.keys()
+
 		for model in self.idxModels.keys() :
 			print('Model : {} :: {} pictures.'.format(model, len(self.idxModels[model]) ) )
 
 
 	def __len__(self) :
 		return len(self.parsedAnnotations)
+
+	def nbrModel(self) :
+		return len(self.idxModels.keys())
+
+	def nbrSample4Model(self,model_idx) :
+		return len(self.idxModels[ idx2model[model_idx] ] )
+
+	def generateFewShotLearningTask(self, model_idx) :
+        nbrSample = self.nbrSample4Model(model_idx)
+        indexes = self.idxModels[ self.idx2model[model_idx] ]
+        samples = list()
+        for m in range(nbrSample) :
+        	samples.append( {'model':model_idx, 'sample':indexes[m]} )
+
+        random.shuffle(samples)
+
+        return samples, nbrSample
+
+    def generateIterFewShotInputSequence(self, model_idx) :
+        '''
+        Returns :
+            sequence of tuple (x_0, y_{-1}(dummy)), (x_1, y_0) ... (x_n, y_n-1), (x_n+1(dummy), y_n)
+            nbr of samples in the whole task.
+        '''
+        samples, nbrSamples = self.generateFewShotLearningTask(model_idx=model_idx)
+        
+        seq = list()
+        prev_sample = self[ samples[-1]['sample'] ]
+        curr_sample = None 
+        for i in range(nbrSamples) :
+            d = dict()
+            curr_sample = self[ samples[i]['sample'] ]
+
+            x = curr_sample['image']
+            y = prev_samples['gaze']
+            label = curr_sample['gaze']
+
+            d = {'x':x, 'y':y, 'label':label}
+            seq.append( d )
+
+            prev_samples = curr_sample
+        
+        return seq, nbrSamples
+         
+
+    def getSample(self, model_idx, sample_idx) :
+        model_name = self.idx2model[model_idx]
+        idxsample = self.idxModels[model_name][sample_idx]
+        sample = self[idxsample]
+
+        return sample
 
 	def __getitem__(self,idx) :
 		path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
