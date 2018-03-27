@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import os 
 import copy
+import random
 
 import torch
 import torch.nn as nn
@@ -31,7 +32,7 @@ class RandomRecolorNormalize(object) :
 		img = img * (1+t)
 
 		# Normalize color between 0 and 1 :
-		img = img / (255.0*1.0)
+		#img = img / (255.0*1.0)
 
 		# Normalize the size of the image :
 		#img = cv2.resize(img, (self.sizeh,self.sizew))
@@ -50,17 +51,17 @@ class data2loc(object) :
 		outputs[0,1] = gaze['y']
 				
 			
-		return {'image':img, 'outputs':outputs}
+		return {'image':img, 'gaze':outputs}
 
 
 class ToTensor(object) :
 	def __call__(self, sample) :
-		image, outputs = sample['image'], sample['outputs']
+		image, outputs = sample['image'], sample['gaze']
 		#swap color axis :
 		# numpy : H x W x C
 		# torch : C x H x W
 		image = image.transpose( (2,0,1) )
-		return {'image':torch.from_numpy(image/255.0), 'landmarks':torch.from_numpy(outputs) }
+		return {'image':torch.from_numpy(image/255.0), 'gaze':torch.from_numpy(outputs) }
 
 Transform = transforms.Compose([
 							data2loc(),
@@ -188,7 +189,7 @@ class DatasetGazeRecognition(Dataset) :
 				self.idxModels[model] = list()
 			self.idxModels[model].append(idx)
 
-		self.idx2model = self.idxModels.keys()
+		self.idx2model = list(self.idxModels.keys())
 
 		for model in self.idxModels.keys() :
 			print('Model : {} :: {} pictures.'.format(model, len(self.idxModels[model]) ) )
@@ -201,7 +202,7 @@ class DatasetGazeRecognition(Dataset) :
 		return len(self.idxModels.keys())
 
 	def nbrSample4Task(self,model_idx) :
-		return len(self.idxModels[ idx2model[model_idx] ] )
+		return len(self.idxModels[ self.idx2model[model_idx] ] )
 
 	def generateFewShotLearningTask(self, task_idx) :
 		model_idx = task_idx
@@ -226,7 +227,7 @@ class DatasetGazeRecognition(Dataset) :
 		    sequence of tuple (x_0, y_{-1}(dummy)), (x_1, y_0) ... (x_n, y_n-1), (x_n+1(dummy), y_n)
 		    nbr of samples in the whole task.
 		'''
-		samples, nbrSamples = self.generateFewShotLearningTask(model_idx=model_idx)
+		samples, nbrSamples = self.generateFewShotLearningTask(task_idx=model_idx)
 
 		seq = list()
 		prev_sample = self[ samples[-1]['sample'] ]
