@@ -197,56 +197,63 @@ class DatasetGazeRecognition(Dataset) :
 	def __len__(self) :
 		return len(self.parsedAnnotations)
 
-	def nbrModel(self) :
+	def nbrTasks(self) :
 		return len(self.idxModels.keys())
 
-	def nbrSample4Model(self,model_idx) :
+	def nbrSample4Task(self,model_idx) :
 		return len(self.idxModels[ idx2model[model_idx] ] )
 
-	def generateFewShotLearningTask(self, model_idx) :
-        nbrSample = self.nbrSample4Model(model_idx)
-        indexes = self.idxModels[ self.idx2model[model_idx] ]
-        samples = list()
-        for m in range(nbrSample) :
-        	samples.append( {'model':model_idx, 'sample':indexes[m]} )
+	def generateFewShotLearningTask(self, task_idx) :
+		model_idx = task_idx
+		nbrSample = self.nbrSample4Task(model_idx)
+		indexes = self.idxModels[ self.idx2model[model_idx] ]
+		samples = list()
+		for m in range(nbrSample) :
+			samples.append( {'model':model_idx, 'sample':indexes[m]} )
 
-        random.shuffle(samples)
+		random.shuffle(samples)
 
-        return samples, nbrSample
+		return samples, nbrSample
 
-    def generateIterFewShotInputSequence(self, model_idx) :
-        '''
-        Returns :
-            sequence of tuple (x_0, y_{-1}(dummy)), (x_1, y_0) ... (x_n, y_n-1), (x_n+1(dummy), y_n)
-            nbr of samples in the whole task.
-        '''
-        samples, nbrSamples = self.generateFewShotLearningTask(model_idx=model_idx)
-        
-        seq = list()
-        prev_sample = self[ samples[-1]['sample'] ]
-        curr_sample = None 
-        for i in range(nbrSamples) :
-            d = dict()
-            curr_sample = self[ samples[i]['sample'] ]
+	def getDummyLabel(self) :
+		randidx = np.random.randing(len(self))
+		return self[randidx]['gaze']
 
-            x = curr_sample['image']
-            y = prev_samples['gaze']
-            label = curr_sample['gaze']
+	def generateIterFewShotInputSequence(self, task_idx) :
+		model_idx = task_idx
+		'''
+		Returns :
+		    sequence of tuple (x_0, y_{-1}(dummy)), (x_1, y_0) ... (x_n, y_n-1), (x_n+1(dummy), y_n)
+		    nbr of samples in the whole task.
+		'''
+		samples, nbrSamples = self.generateFewShotLearningTask(model_idx=model_idx)
 
-            d = {'x':x, 'y':y, 'label':label}
-            seq.append( d )
+		seq = list()
+		prev_sample = self[ samples[-1]['sample'] ]
+		curr_sample = None 
+		for i in range(nbrSamples) :
+			d = dict()
+			curr_sample = self[ samples[i]['sample'] ]
 
-            prev_samples = curr_sample
-        
-        return seq, nbrSamples
-         
+			x = curr_sample['image']
+			y = prev_sample['gaze']
+			label = curr_sample['gaze']
 
-    def getSample(self, model_idx, sample_idx) :
-        model_name = self.idx2model[model_idx]
-        idxsample = self.idxModels[model_name][sample_idx]
-        sample = self[idxsample]
+			d = {'x':x, 'y':y, 'label':label}
+			seq.append( d )
 
-        return sample
+			prev_sample = curr_sample
+
+		return seq, nbrSamples
+
+
+	def getSample(self, task_idx, sample_idx) :
+		model_idx = task_idx
+		model_name = self.idx2model[model_idx]
+		idxsample = self.idxModels[model_name][sample_idx]
+		sample = self[idxsample]
+
+		return sample
 
 	def __getitem__(self,idx) :
 		path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
