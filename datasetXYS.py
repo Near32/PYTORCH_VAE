@@ -204,10 +204,13 @@ class DatasetGazeRecognition(Dataset) :
 	def nbrSample4Task(self,model_idx) :
 		return len(self.idxModels[ self.idx2model[model_idx] ] )
 
-	def generateFewShotLearningTask(self, task_idx) :
+	def generateFewShotLearningTask(self, task_idx, nbrSample=100) :
 		model_idx = task_idx
-		nbrSample = self.nbrSample4Task(model_idx)
+		nbrSample = min( nbrSample, self.nbrSample4Task(model_idx) )
 		indexes = self.idxModels[ self.idx2model[model_idx] ]
+		
+		random.shuffle(indexes)
+
 		samples = list()
 		for m in range(nbrSample) :
 			samples.append( {'model':model_idx, 'sample':indexes[m]} )
@@ -220,14 +223,14 @@ class DatasetGazeRecognition(Dataset) :
 		randidx = np.random.randing(len(self))
 		return self[randidx]['gaze']
 
-	def generateIterFewShotInputSequence(self, task_idx) :
+	def generateIterFewShotInputSequence(self, task_idx, nbrSample=100) :
 		model_idx = task_idx
 		'''
 		Returns :
 		    sequence of tuple (x_0, y_{-1}(dummy)), (x_1, y_0) ... (x_n, y_n-1), (x_n+1(dummy), y_n)
 		    nbr of samples in the whole task.
 		'''
-		samples, nbrSamples = self.generateFewShotLearningTask(task_idx=model_idx)
+		samples, nbrSamples = self.generateFewShotLearningTask(task_idx=model_idx, nbrSample=nbrSample)
 
 		seq = list()
 		prev_sample = self[ samples[-1]['sample'] ]
