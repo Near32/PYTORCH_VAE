@@ -12,6 +12,12 @@ from torch.utils.data import Dataset
 
 import cv2
 
+def randomizeBackground(img) :
+	background_color = img[0,0]
+	mask = np.array(img == background_color,dtype=np.uint8)
+	random_background = np.random.randint(255, size=img.shape,dtype=np.uint8)
+	ret = img*(1-mask)+random_background*mask 
+	return ret
 
 class RandomRecolorNormalize(object) :
 	def __init__(self,sizew=224,sizeh=224) :
@@ -262,6 +268,7 @@ class DatasetGazeRecognition(Dataset) :
 	def __getitem__(self,idx) :
 		path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
 		img = cv2.imread(path)
+		img = randomizeBackground(img)
 		h,w,c = img.shape 
 		
 		if self.stacking :
