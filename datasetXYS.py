@@ -277,7 +277,7 @@ class DatasetGazeRecognition(Dataset) :
 			face_bndbox = self.parsedAnnotations[idx]['face']
 			reye_bndbox = self.parsedAnnotations[idx]['reye']
 			leye_bndbox = self.parsedAnnotations[idx]['leye']
-
+			
 			scalar = 1.0
 			if self.divide2 :
 				scalar = 2.0
@@ -310,7 +310,7 @@ class DatasetGazeRecognition(Dataset) :
 			leye_img = np.expand_dims( cv2.resize(leye_img, (w,h) ), 2)
 			
 			# concatenation :
-			img = np.concatenate( [img, reye_img, leye_img], axis=2)
+			img = np.concatenate( [face_img, reye_img, leye_img], axis=2)
 
 		img = np.ascontiguousarray(img)
 		img = cv2.resize( img, (self.h, self.w) )
@@ -415,8 +415,10 @@ class LinearClassifier(nn.Module) :
 
 
 def test_stacking() :
-	dataset = load_dataset_XYS(stacking=True)
+	#dataset = load_dataset_XYS(stacking=True)
+	dataset = load_dataset_XYSM10(stacking=True)
 
+	idx = 0 
 	sample = dataset[0]
 
 	img = sample['image']
@@ -428,6 +430,11 @@ def test_stacking() :
 		key = cv2.waitKey(30)
 		if key == ord('q') :
 			break
+		elif key == ord('n') :
+			idx+=1
+			sample = dataset[idx]
+			img = sample['image']
+			img0 = img[:,:,:].numpy().reshape((-1,224))
 
 
 def test_dataset_visualization() :
@@ -477,13 +484,15 @@ def load_dataset_XYS(img_dim=224,stacking=False) :
 
 
 def load_dataset_XYSM10(img_dim=224,stacking=False) :
-	ann_dir = './dataset-XYSM10-latent/annotations'
+	#ann_dir = './dataset-XYSM10-latent/annotations'
+	#ann_dir = './dataset-XYSM10-latent/fixed_annotations'
+	ann_dir = './dataset-XYSM10-latent/fixed_annotations_v2'
 	img_dir = './dataset-XYSM10-latent/images'
 	width = img_dim
 	height = img_dim
 	transform = Transform #TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=True)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
 	
 	return datasets
 
