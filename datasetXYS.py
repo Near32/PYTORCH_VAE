@@ -176,6 +176,10 @@ class DatasetGazeRecognition(Dataset) :
 		self.ann_dir = ann_dir
 		self.stacking = stacking
 		self.divide2 = divide2
+		self.testing = False
+		self.nbrTestModels = 2
+		self.testsize = 0
+		self.testoffset = 0
 
 		self.w = width
 		self.h = height
@@ -200,9 +204,15 @@ class DatasetGazeRecognition(Dataset) :
 		for model in self.idxModels.keys() :
 			print('Model : {} :: {} pictures.'.format(model, len(self.idxModels[model]) ) )
 
+		self.testsize = sum( [len(self.idxModels[ self.idx2model[model] ]) for model in range( len(self.idxModels)-self.nbrTestModels,len(self.idxModels) )])
+		self.testoffset = len(self.parsedAnnotations)-self.testsize
+		print('TESTING SIZE : {}'.format(self.testsize))
 
 	def __len__(self) :
-		return len(self.parsedAnnotations)
+		if not(self.testing):
+			return len(self.parsedAnnotations)-self.testsize
+		else :
+			return self.testsize
 
 	def nbrTasks(self) :
 		return len(self.idxModels.keys())
@@ -266,6 +276,10 @@ class DatasetGazeRecognition(Dataset) :
 		return sample
 
 	def __getitem__(self,idx) :
+		if self.testing :
+			idx = idx%self.testsize
+			idx = idx + self.testoffset
+
 		path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
 		img = cv2.imread(path)
 		img = randomizeBackground(img)
@@ -487,6 +501,27 @@ def load_dataset_XYSM10(img_dim=224,stacking=False) :
 	
 	return datasets
 
+def load_dataset_XYSM10_CXY(img_dim=224,stacking=False) :
+	ann_dir = './dataset-XYSM10-CXY-latent/annotations'
+	img_dir = './dataset-XYSM10-CXY-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=True)
+	
+	return datasets
+
+def load_dataset_XYSM10_CXY_2(img_dim=224,stacking=False) :
+	ann_dir = './dataset-XYSM10-CXY-2-latent/annotations'
+	img_dir = './dataset-XYSM10-CXY-2-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=True)
+	
+	return datasets
 
 def generateIDX(dataset) :
 	from math import floor
