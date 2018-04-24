@@ -266,6 +266,47 @@ class DatasetGazeRecognition(Dataset) :
 
 		return seq, nbrSamples
 
+	def generateIterFewShotInputSequenceBatched(self, task_idx, nbrSample=100, batch_size=1) :
+		model_idx = task_idx
+		'''
+		Returns :
+		    sequence of tuple (x_0, y_{-1}(dummy)), (x_1, y_0) ... (x_n, y_n-1), (x_n+1(dummy), y_n)
+		    nbr of batch samples in the whole task.
+		'''
+		samples, nbrSamples = self.generateFewShotLearningTask(task_idx=model_idx, nbrSample=nbrSample)
+
+		nbrSample4Task = nbrSample // batch_size
+
+		seq = list()
+		#prev_sample = self[ samples[-1]['sample'] ]
+		prev_sample = torch.cat( [ self[ samples[-1]['sample'] ]['gaze'] ] * batch_size, dim=0)
+		curr_sample = None 
+		#for i in range(nbrSamples) :
+		for i in range(nbrSample4Task) :
+			d = dict()
+			for j in range(batch_size) :
+				idx = j+i*batch_size
+				#curr_sample = self[ samples[i]['sample'] ]
+				curr_sample = self[ samples[idx]['sample'] ]
+
+				x = curr_sample['image'].unsqueeze(0)
+				#y = prev_sample['gaze']
+				y = prev_sample[j].unsqueeze(0)
+				label = curr_sample['gaze']
+
+				if len(d.keys()) == 0 :
+					d = {'x':x, 'y':y, 'label':label}
+				else :
+					d['x'] = torch.cat( [d['x'], x], dim=0)
+					d['y'] = torch.cat( [d['y'], y], dim=0)
+					d['label'] = torch.cat( [d['label'], label], dim=0)
+			
+			seq.append( d )
+
+			prev_sample = d['label']
+
+		#return seq, nbrSamples
+		return seq, nbrSample4Task
 
 	def getSample(self, task_idx, sample_idx) :
 		model_idx = task_idx
@@ -324,7 +365,8 @@ class DatasetGazeRecognition(Dataset) :
 			leye_img = np.expand_dims( cv2.resize(leye_img, (w,h) ), 2)
 			
 			# concatenation :
-			img = np.concatenate( [face_img, reye_img, leye_img], axis=2)
+			#img = np.concatenate( [face_img, reye_img, leye_img], axis=2)
+			img = np.concatenate( [img, reye_img, leye_img], axis=2)
 
 		img = np.ascontiguousarray(img)
 		img = cv2.resize( img, (self.h, self.w) )
@@ -430,7 +472,8 @@ class LinearClassifier(nn.Module) :
 
 def test_stacking() :
 	#dataset = load_dataset_XYS(stacking=True)
-	dataset = load_dataset_XYSM10(stacking=True)
+	#dataset = load_dataset_XYSM10(stacking=True)
+	dataset = load_dataset_XYSM10_CXY_2(stacking=True)
 
 	idx = 0 
 	sample = dataset[0]
@@ -528,7 +571,7 @@ def load_dataset_XYSM10_CXY_2(img_dim=224,stacking=False) :
 	height = img_dim
 	transform = Transform #TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=True)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
 	
 	return datasets
 
