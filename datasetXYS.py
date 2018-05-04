@@ -84,11 +84,15 @@ TransformPlus = transforms.Compose([
 def parse_annotation_GazeRecognition(ann_dir) :
 	imgs = []
 
-	for ann in os.listdir(ann_dir) :
+	folder = os.listdir(ann_dir)
+	nbrann = len(folder)
+	for idx_ann, ann in enumerate( folder ) :
 		img = {}
 
-		tree = ET.parse(os.path.join(ann_dir,ann) )
-
+		path2ann = os.path.join(ann_dir,ann)
+		tree = ET.parse(path2ann )
+		
+		print('DATASET :: LOADING : {:0.1f} %'.format( idx_ann/nbrann*100.0), end='\r', flush=True )
 
 		for elem in tree.iter() :
 			if 'filename' in elem.tag :
@@ -170,14 +174,17 @@ def parse_annotation_GazeRecognition(ann_dir) :
 
 
 class DatasetGazeRecognition(Dataset) :
-	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=TransformPlus,stacking=False,divide2=False):
+	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=TransformPlus,stacking=False,divide2=False,randomcropping=True):
 		super(DatasetGazeRecognition,self).__init__()
 		self.img_dir = img_dir
 		self.ann_dir = ann_dir
 		self.stacking = stacking
 		self.divide2 = divide2
+		self.randomcropping = randomcropping
+
 		self.testing = False
-		self.nbrTestModels = 2
+		#self.nbrTestModels = 4
+		self.nbrTestModels = 1
 		self.testsize = 0
 		self.testoffset = 0
 
@@ -210,7 +217,10 @@ class DatasetGazeRecognition(Dataset) :
 
 	def __len__(self) :
 		if not(self.testing):
-			return len(self.parsedAnnotations)-self.testsize
+			ret = len(self.parsedAnnotations)-self.testsize
+			if ret == 0 :
+				ret = self.testsize
+			return ret 
 		else :
 			return self.testsize
 
@@ -321,13 +331,21 @@ class DatasetGazeRecognition(Dataset) :
 			idx = idx%self.testsize
 			idx = idx + self.testoffset
 
-		path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
-		img = cv2.imread(path)
-		img = randomizeBackground(img)
-		h,w,c = img.shape 
-		
+		issue = True
+		while issue :
+			try :
+				path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
+				img = cv2.imread(path)
+				img = randomizeBackground(img)
+				h,w,c = img.shape 
+				issue = False
+			except Exception as e :
+				print(e,idx)
+				idx = idx+1
+					
+
 		if self.stacking :
-			img = np.expand_dims( cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 2)
+			img = img#np.expand_dims( cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 2)
 
 			face_bndbox = self.parsedAnnotations[idx]['face']
 			reye_bndbox = self.parsedAnnotations[idx]['reye']
@@ -336,7 +354,7 @@ class DatasetGazeRecognition(Dataset) :
 			scalar = 1.0
 			if self.divide2 :
 				scalar = 2.0
-						
+			
 			# face :
 			fy1 = int( min( max(0,face_bndbox[1]/scalar), h) )
 			fy2 = int( min( max(0,face_bndbox[3]/scalar), h) )
@@ -344,7 +362,8 @@ class DatasetGazeRecognition(Dataset) :
 			fx2 = int( min( max(0,face_bndbox[2]/scalar), w) )
 			
 			face_img = img[fy1:fy2, fx1:fx2,:]
-			face_img = np.expand_dims(  cv2.resize(face_img, (w,h) ), 2)
+			#face_img = np.expand_dims(  cv2.resize(face_img, (w,h) ), 2)
+			face_img = cv2.resize(face_img, (w,h) )
 			
 			# reye :
 			ry1 = int( min( max(0,reye_bndbox[1]/scalar), h) )
@@ -353,8 +372,17 @@ class DatasetGazeRecognition(Dataset) :
 			rx2 = int( min( max(0,reye_bndbox[2]/scalar), w) )
 			
 			reye_img = img[ry1:ry2, rx1:rx2,:]
-			reye_img = np.expand_dims( cv2.resize(reye_img, (w,h) ), 2)
-			
+			# Random cropping over the eyes :
+			if self.randomcropping:
+				off = random.randint(1,64)
+				ow, oh = w+off,h+off			
+				reye_img = cv2.resize(reye_img, (ow,oh))
+				top = np.random.randint(0, oh-h)
+				left = np.random.randint(0, ow-w)
+				reye_img = reye_img[top:top+h, left: left+w]
+			#reye_img = np.expand_dims( cv2.resize(reye_img, (w,h) ), 2)
+			reye_img = cv2.resize(reye_img, (w,h) )
+				
 			# leye :
 			ly1 = int( min( max(0,leye_bndbox[1]/scalar), h) )
 			ly2 = int( min( max(0,leye_bndbox[3]/scalar), h) )
@@ -362,15 +390,38 @@ class DatasetGazeRecognition(Dataset) :
 			lx2 = int( min( max(0,leye_bndbox[2]/scalar), w) )
 			
 			leye_img = img[ly1:ly2, lx1:lx2,:]
-			leye_img = np.expand_dims( cv2.resize(leye_img, (w,h) ), 2)
+			# Random cropping over the eyes :
+			if self.randomcropping:
+				off = random.randint(1,64)
+				ow, oh = w+off,h+off			
+				leye_img = cv2.resize(leye_img, (ow,oh))
+				top = np.random.randint(0, oh-h)
+				left = np.random.randint(0, ow-w)
+				leye_img = leye_img[top:top+h, left: left+w]
+			#leye_img = np.expand_dims( cv2.resize(leye_img, (w,h) ), 2)
+			leye_img = cv2.resize(leye_img, (w,h) )
 			
+			img = cv2.resize( img, (self.w, self.h) )
+			reye_img = cv2.resize( reye_img, (self.w, self.h) )
+			leye_img = cv2.resize( leye_img, (self.w, self.h) )
+
+
 			# concatenation :
 			#img = np.concatenate( [face_img, reye_img, leye_img], axis=2)
 			img = np.concatenate( [img, reye_img, leye_img], axis=2)
+		else :
+			img = cv2.resize( img, (self.w, self.h) )
 
 		img = np.ascontiguousarray(img)
-		img = cv2.resize( img, (self.h, self.w) )
-
+		
+		'''
+		img = np.concatenate( [ img[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
+		cv2.imshow('test', img )
+		while True :
+			key = cv2.waitKey()
+			if key == ord('q'):
+				break
+		'''
 		gaze = copy.deepcopy(self.parsedAnnotations[idx]['data']['gaze'])
 		cam_screen_offset = copy.deepcopy(self.parsedAnnotations[idx]['data']['camera_screen_center_offset'])
 		for el in ['x','y'] :
@@ -469,18 +520,159 @@ class LinearClassifier(nn.Module) :
 
 		return soft_out
 
+def test_error_visualization() :
+	import matplotlib.pyplot as plt
+	from mpl_toolkits.mplot3d import Axes3D
+
+	def find_closest_2d(lt_2d,val2d) :
+		def find_closest(lt,val,idx=-1,size=-1) :
+			if size == -1 :
+				size = len(lt)
+				idx = size // 2 - 1
+
+			if val <= lt[0] :
+				return 0
+			elif val >= lt[-1] :
+				return len(lt)-1
+
+			if size <= 1 :
+				return idx
+			else :
+				size = size // 2
+				print(idx,len(lt),size)
+				d = abs(val-lt[idx])
+				dm = abs(val-lt[idx-1])
+				dp = abs(val-lt[idx+1])
+				if dm <= d :
+					return find_closest(lt,val,idx-size//2,size)
+				elif dp <= d :
+					return find_closest(lt,val,idx+size//2,size)
+				else :
+					return idx 
+
+		lt = lt_2d[0]
+		val = val2d[0]
+		idx1 = find_closest(lt,val)
+		lt = lt_2d[1]
+		val = val2d[1]
+		idx2 = find_closest(lt,val)
+		
+		return (idx1,idx2)
+
+	dimx = 10
+	dimy = 10
+	x = [ [i/dimx for i in range(dimx)] for j in range(dimy)]
+	y = [ [i/dimy for i in range(dimy)] for j in range(dimx)]
+
+	
+	lt_2d =[[i/dim for i in range(dim)] for dim in [dimx,dimy]]
+
+	path = './vizdata.npz'
+	data = np.load(path)
+
+	
+	gx = np.asarray(data['arr_0'])
+	m = gx.mean()
+	std = gx.std()
+	gx = ( (gx-m)/std+1.0) /2.0
+	gy = np.asarray(data['arr_1'])
+	m = gy.mean()
+	std = gy.std()
+	gy = ( (gy-m)/std+1.0) /2.0
+	meanerror = np.asarray(data['arr_2'])
+	print(meanerror[0])
+	
+	def arrange(lt_2d,gx,gy,val,dimx=100,dimy=100) :
+		nbrel = len(gx)
+		out = [ [(0,0) for i in range(dimx)] for j in range(dimy)] 
+		for i in range(nbrel) :
+			idxx, idxy = find_closest_2d(lt_2d=lt_2d,val2d=[gx[i],gy[i]])
+			it = out[idxy][idxx][0]
+			cummean = out[idxy][idxx][1]
+			out[idxy][idxx] = (it+1, (cummean*it + val[i]) / (it+1) ) 
+		return out 
+
+	meanerror = arrange(lt_2d=lt_2d, gx=gx, gy=gy, val=meanerror,dimx=dimx,dimy=dimy)
+	
+	'''
+	x = [ [ x[j][i] for i in range(dimx) if meanerror[j][i][0] for j in range(dimy)] ).reshape((-1))
+	xs = np.zeros( (len(x) ) )
+	for i,el in enumerate(x) :
+		xs[i] = el
+	print(xs.shape)
+	y = np.asarray( [ [y[j][i] for i in range(dimx) if meanerror[j][i][0]] for j in range(dimy)] ).reshape((-1))
+	meanerror = np.asarray( [ [meanerror[j][i] for i in range(dimx) if meanerror[j][i][0]] for j in range(dimy)] ).reshape((-1))
+	'''
+	#x = x.reshape((-1))
+	#y = y.reshape((-1))
+	
+	'''
+	xs = list()
+	ys = list()
+	me = list()
+	for i in range(dimx) :
+		for j in range(dimy) :
+			if meanerror[j][i][0] :
+				me.append(meanerror[j][i][1])
+				xs.append( x[i][j])
+				ys.append( y[i][j])
+	'''
+
+	#meanerror = [ [i+np.random.rand() for i in range(dimx)] for j in range(dimy)]
+	
+	#print(x.shape)
+
+	xs = np.arange(0,1,1.0/dimx)
+	ys = np.arange(0,1,1.0/dimy)
+	xs, ys = np.meshgrid(xs,ys)
+	#me = np.sqrt(xs**2+ys**2)
+	meanerror =  [ [meanerror[j][i][1] for i in range(dimx)] for j in range(dimy)] 
+	
+	print(meanerror)
+	me = np.array( meanerror ).reshape( (dimx,dimy))
+	mv = None
+	it = 1
+	for i in range(dimx) :
+		for j in range(dimy) :
+			if me[i][j] != 0 :
+				if mv is None :
+					mv = me[i][j]
+				else :
+					mv = (mv*it + me[i][j])/(it+1)
+					it += 1
+
+	for i in range(dimx) :
+		for j in range(dimy) :
+			if me[i][j] == 0 :
+				me[i][j] = mv
+	print(me.shape)
+	
+	print(xs)
+	print('-'*20)
+	print(ys)
+
+
+	fig = plt.figure()
+	ax = fig.add_subplot(111, projection='3d')
+	#ax.scatter( xs=xs, ys=ys, zs=me)
+	ax.plot_surface( X=xs, Y=ys, Z=me)
+	plt.show()
 
 def test_stacking() :
 	#dataset = load_dataset_XYS(stacking=True)
 	#dataset = load_dataset_XYSM10(stacking=True)
-	dataset = load_dataset_XYSM10_CXY_2(stacking=True)
+	#dataset = load_dataset_XYSM10_CXY_2(stacking=True)
+	#dataset = load_dataset_XYSM10_CXY_E(stacking=True)
+	dataset = load_dataset_XYSM2_C3D_EF(stacking=True)
 
 	idx = 0 
 	sample = dataset[0]
 
 	img = sample['image']
-	img0 = img[:,:,:].numpy().reshape((-1,224))
-
+	img0 = img[:,:,:].numpy().transpose((1,2,0))
+	print(img0.shape)
+	img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
+		
 	while True :
 		cv2.imshow('test',img0 )
 
@@ -491,19 +683,14 @@ def test_stacking() :
 			idx+=1
 			sample = dataset[idx]
 			img = sample['image']
-			img0 = img[:,:,:].numpy().reshape((-1,224))
-
+			img0 = img[:,:,:].numpy().transpose((1,2,0))
+			img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
+		
 
 def test_dataset_visualization() :
 	#ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
 	#img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
-	ann_dir = './dataset-XYS-latent/annotations'
-	img_dir = './dataset-XYS-latent/images'
-	width = 448
-	height = 448
-	transform = TransformPlus
-
-	dataset = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform)
+	dataset = load_dataset_XYSM10_CXY_E(224)
 
 	i=0
 	continuer = True
@@ -572,6 +759,62 @@ def load_dataset_XYSM10_CXY_2(img_dim=224,stacking=False) :
 	transform = Transform #TransformPlus
 
 	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
+	
+	return datasets
+
+def load_dataset_XYSM10_CXY_E(img_dim=224,stacking=False) :
+	ann_dir = './dataset-XYSM10-CXY-E-latent/annotations'
+	img_dir = './dataset-XYSM10-CXY-E-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
+	
+	return datasets
+
+
+def load_dataset_XYSM2_C3D_EF(img_dim=224,stacking=False) :
+	ann_dir = './dataset-XYSM2-C3D-EF-latent/annotations'
+	img_dir = './dataset-XYSM2-C3D-EF-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
+	
+	return datasets
+
+def load_dataset_XYSM891215_H3D_C6D_EF(img_dim=224,stacking=False) :
+	ann_dir = './dataset-XYSM891215-H3D-C6D-EF-latent/annotations'
+	img_dir = './dataset-XYSM891215-H3D-C6D-EF-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
+	
+	return datasets
+
+def load_dataset_XYSM17182122_H3D_C6D_EF(img_dim=224,stacking=False,randomcropping=False) :
+	ann_dir = './dataset-XYSM17182122-H3D-C6D-EF-latent/annotations'
+	img_dir = './dataset-XYSM17182122-H3D-C6D-EF-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping)
+	
+	return datasets
+
+def load_dataset_XYSM1_H3D_C6D_EFG(img_dim=224,stacking=False,randomcropping=False) :
+	ann_dir = './dataset-XYSM1-H3D-C6D-EFG-latent/annotations'
+	img_dir = './dataset-XYSM1-H3D-C6D-EFG-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform #TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping)
 	
 	return datasets
 
@@ -645,5 +888,6 @@ def test() :
 if __name__ == '__main__' :
 	#test_dataset()
 	#test_dataset_visualization()
-	test_stacking()
+	test_error_visualization()
+	#test_stacking()
 	#test()
