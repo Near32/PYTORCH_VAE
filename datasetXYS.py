@@ -19,6 +19,24 @@ def randomizeBackground(img) :
 	ret = img*(1-mask)+random_background*mask 
 	return ret
 
+
+def noising(img,level=10,size=32) :	
+	# multiplicative noise, with preserved channels:
+	noise = np.concatenate( [ np.expand_dims(np.random.rand( *img.shape[:2]), 2) ] * img.shape[2], axis=2)
+	
+	img = img * noise 
+
+	# masking noise :
+	for i in range(level) :
+		mx = np.random.randint(1,img.shape[0])
+		my = np.random.randint(1,img.shape[1])
+		mh = np.random.randint(size//4,size)
+		mw = np.random.randint(size//4,size)
+
+		img[mx:mx+mw,my:my+mh,:] *= 0.0
+	
+	return img
+
 class RandomRecolorNormalize(object) :
 	def __init__(self,sizew=224,sizeh=224) :
 		self.sizeh = sizeh
@@ -33,6 +51,11 @@ class RandomRecolorNormalize(object) :
 		t = [np.random.uniform()]
 		t += [np.random.uniform()]
 		t += [np.random.uniform()]
+		if c > 3 :
+			div = c // 3
+			t=t*div
+		if c%3 != 0 :
+			t+=[np.random.uniform()]
 		t = np.array(t)
 
 		img = img * (1+t)
@@ -138,6 +161,9 @@ def parse_annotation_GazeRecognition(ann_dir) :
 								cam_screen['x'] = float(attri.text)
 							if 'y' in attri.tag :
 								cam_screen['y'] = float(attri.text)
+							if 'fov' in attri.tag :
+								cam_screen['fov'] = float(attri.text)
+
 					if 'head' in attr.tag :
 						head = {}
 						data['head'] = head
@@ -174,13 +200,24 @@ def parse_annotation_GazeRecognition(ann_dir) :
 
 
 class DatasetGazeRecognition(Dataset) :
-	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=TransformPlus,stacking=False,divide2=False,randomcropping=True):
+	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=Transform,stacking=True,divide2=False,randomcropping=True,denoising=True,fov=True,iTrackerFormat=False):
 		super(DatasetGazeRecognition,self).__init__()
 		self.img_dir = img_dir
 		self.ann_dir = ann_dir
 		self.stacking = stacking
 		self.divide2 = divide2
 		self.randomcropping = randomcropping
+		print('RANDOM CROPPING : ',self.randomcropping)
+		self.fov = fov
+		self.default_fov = 4.1
+		print('FOV INPUT : ',self.fov)
+		self.denoising = denoising
+		self.noising_level = 10
+		self.noising_size = 64
+		print('DENOISING : ',self.denoising)
+
+		self.iTrackerFormat = iTrackerFormat
+		print('iTracker Format : ',self.iTrackerFormat)
 
 		self.testing = False
 		#self.nbrTestModels = 4
@@ -341,7 +378,7 @@ class DatasetGazeRecognition(Dataset) :
 				issue = False
 			except Exception as e :
 				print(e,idx)
-				idx = idx+1
+				idx = (idx+1)%len(self)
 					
 
 		if self.stacking :
@@ -362,9 +399,22 @@ class DatasetGazeRecognition(Dataset) :
 			fx2 = int( min( max(0,face_bndbox[2]/scalar), w) )
 			
 			face_img = img[fy1:fy2, fx1:fx2,:]
+			# Random cropping over the eyes :
+			if self.randomcropping:
+				off = random.randint(32,96)
+				ow, oh = w+off,h+off			
+				face_img = cv2.resize(face_img, (ow,oh))
+				top = np.random.randint(0, oh-h)
+				left = np.random.randint(0, ow-w)
+				face_img = face_img[top:top+h, left: left+w]
 			#face_img = np.expand_dims(  cv2.resize(face_img, (w,h) ), 2)
 			face_img = cv2.resize(face_img, (w,h) )
 			
+			if self.iTrackerFormat :
+				face_grid = np.zeros((h,w,1))
+				face_grid[fy1:fy2, fx1:fx2,:] = 255.0
+				face_grid = cv2.resize(face_grid, (w,h) )
+				
 			# reye :
 			ry1 = int( min( max(0,reye_bndbox[1]/scalar), h) )
 			ry2 = int( min( max(0,reye_bndbox[3]/scalar), h) )
@@ -374,7 +424,7 @@ class DatasetGazeRecognition(Dataset) :
 			reye_img = img[ry1:ry2, rx1:rx2,:]
 			# Random cropping over the eyes :
 			if self.randomcropping:
-				off = random.randint(1,64)
+				off = random.randint(32,96)
 				ow, oh = w+off,h+off			
 				reye_img = cv2.resize(reye_img, (ow,oh))
 				top = np.random.randint(0, oh-h)
@@ -392,7 +442,7 @@ class DatasetGazeRecognition(Dataset) :
 			leye_img = img[ly1:ly2, lx1:lx2,:]
 			# Random cropping over the eyes :
 			if self.randomcropping:
-				off = random.randint(1,64)
+				off = random.randint(32,96)
 				ow, oh = w+off,h+off			
 				leye_img = cv2.resize(leye_img, (ow,oh))
 				top = np.random.randint(0, oh-h)
@@ -404,16 +454,34 @@ class DatasetGazeRecognition(Dataset) :
 			img = cv2.resize( img, (self.w, self.h) )
 			reye_img = cv2.resize( reye_img, (self.w, self.h) )
 			leye_img = cv2.resize( leye_img, (self.w, self.h) )
-
-
+			face_img = cv2.resize(face_img, (self.w,self.h) )
+			if self.iTrackerFormat :
+				face_grid = cv2.resize(face_grid, (self.w,self.h) )
+			
+			if self.denoising :
+				nreye_img = noising(reye_img,level=self.noising_level,size=self.noising_size)
+				nleye_img = noising(leye_img,level=self.noising_level,size=self.noising_size)
+				if self.iTrackerFormat :
+					face_grid = np.reshape(face_grid, (self.w,self.h,1) )
+					nface_grid = noising(face_grid,level=self.noising_level,size=self.noising_size)
+					nface_img = noising(face_img,level=self.noising_level,size=self.noising_size)
+					nimg = np.concatenate( [nface_img, nreye_img, nleye_img,nface_grid], axis=2)
+				else :
+					nimg = noising(img,level=self.noising_level,size=self.noising_size)
+					nimg = np.concatenate( [nimg, nreye_img, nleye_img], axis=2)
+			
 			# concatenation :
-			#img = np.concatenate( [face_img, reye_img, leye_img], axis=2)
-			img = np.concatenate( [img, reye_img, leye_img], axis=2)
+			if self.iTrackerFormat :
+				img = np.concatenate( [face_img, reye_img, leye_img,face_grid], axis=2)
+			else :
+				img = np.concatenate( [img, reye_img, leye_img], axis=2)
 		else :
 			img = cv2.resize( img, (self.w, self.h) )
 
 		img = np.ascontiguousarray(img)
-		
+		if self.denoising :
+			nimp = np.ascontiguousarray(nimg) 
+
 		'''
 		img = np.concatenate( [ img[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
 		cv2.imshow('test', img )
@@ -426,11 +494,30 @@ class DatasetGazeRecognition(Dataset) :
 		cam_screen_offset = copy.deepcopy(self.parsedAnnotations[idx]['data']['camera_screen_center_offset'])
 		for el in ['x','y'] :
 			gaze[el] += cam_screen_offset[el]
-
+		
+		try :
+			fov = cam_screen_offset['fov']
+		except Exception as e :
+				print(e)
+				fov = self.default_fov
+				
 		sample = {'image':img, 'gaze':gaze}
-
+		if self.denoising :
+			nsample = {'image':nimg, 'gaze':gaze}
+		
 		if self.transform is not None :
 			sample = self.transform(sample)
+			if self.denoising :
+				nsample = TransformPlus(nsample)
+				#nsample = self.transform(nsample)
+		
+		if self. denoising :
+			sample.update( {'noised_image':nsample['image']} )
+		else :		
+			sample.update( {'noised_image':sample['image'] } )
+
+		if self.fov :
+			sample.update( {'fov': torch.ones((1,1))*fov })
 
 		return sample
 
@@ -687,6 +774,67 @@ def test_stacking() :
 			img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
 		
 
+def test_noising() :
+	from time import time 
+	#dataset = load_dataset_XYSM2_C3D_EF(stacking=True)
+	dataset = load_dataset_XYSM1_H3D_C6D_EFG_fineGrid(img_dim=224,stacking=True,randomcropping=True,denoising=True)
+
+	idx = 0 
+	sample = dataset[0]
+
+	img = sample['noised_image']
+	img0 = img[:,:,:].numpy().transpose((1,2,0))
+	print(img0.shape)
+	img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
+		
+	while True :
+		cv2.imshow('test',img0 )
+
+		key = cv2.waitKey(30)
+		if key == ord('q') :
+			break
+		elif key == ord('n') :
+			idx+=1
+			t = time()
+			sample = dataset[idx]
+			print('ELT : {} seconds.'.format(time()-t))
+			img = sample['noised_image']
+			img0 = img[:,:,:].numpy().transpose((1,2,0))
+			img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
+
+
+def test_iTrackerFormat() :
+	from time import time 
+	dataset = load_dataset_XYSM1_H3D_C6D_EFG_fineGrid(img_dim=224,stacking=True,randomcropping=True,denoising=True,iTrackerFormat=True)
+
+	idx = 0 
+	sample = dataset[0]
+
+	img = sample['noised_image']
+	img0 = img[:,:,:].numpy().transpose((1,2,0))
+	print(img0.shape)
+	grid = img0[:,:,-1] 	
+	img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
+	
+	while True :
+		cv2.imshow('test',img0 )
+		cv2.imshow('test grid',grid )
+
+		key = cv2.waitKey(30)
+		if key == ord('q') :
+			break
+		elif key == ord('n') :
+			idx+=1
+			t = time()
+			sample = dataset[idx]
+			print('ELT : {} seconds.'.format(time()-t))
+			img = sample['noised_image']
+			#img = sample['image']
+			img0 = img[:,:,:].numpy().transpose((1,2,0))
+			grid = img0[:,:,-1] 	
+			img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
+		
+
 def test_dataset_visualization() :
 	#ann_dir = '/media/kevin/Data/DATASETS/XYS-latent/annotations'
 	#img_dir = '/media/kevin/Data/DATASETS/XYS-latent/images'
@@ -756,7 +904,8 @@ def load_dataset_XYSM10_CXY_2(img_dim=224,stacking=False) :
 	img_dir = './dataset-XYSM10-CXY-2-latent/images'
 	width = img_dim
 	height = img_dim
-	transform = Transform #TransformPlus
+	#transform = Transform 
+	transform = TransformPlus
 
 	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
 	
@@ -767,7 +916,8 @@ def load_dataset_XYSM10_CXY_E(img_dim=224,stacking=False) :
 	img_dir = './dataset-XYSM10-CXY-E-latent/images'
 	width = img_dim
 	height = img_dim
-	transform = Transform #TransformPlus
+	#transform = Transform 
+	transform = TransformPlus
 
 	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
 	
@@ -779,42 +929,70 @@ def load_dataset_XYSM2_C3D_EF(img_dim=224,stacking=False) :
 	img_dir = './dataset-XYSM2-C3D-EF-latent/images'
 	width = img_dim
 	height = img_dim
-	transform = Transform #TransformPlus
+	#transform = Transform 
+	transform = TransformPlus
 
 	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
 	
 	return datasets
 
-def load_dataset_XYSM891215_H3D_C6D_EF(img_dim=224,stacking=False) :
+def load_dataset_XYSM891215_H3D_C6D_EF(img_dim=224,stacking=False,denoising=False) :
 	ann_dir = './dataset-XYSM891215-H3D-C6D-EF-latent/annotations'
 	img_dir = './dataset-XYSM891215-H3D-C6D-EF-latent/images'
 	width = img_dim
 	height = img_dim
-	transform = Transform #TransformPlus
+	#transform = Transform 
+	transform = TransformPlus
 
 	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False)
 	
 	return datasets
 
-def load_dataset_XYSM17182122_H3D_C6D_EF(img_dim=224,stacking=False,randomcropping=False) :
+def load_dataset_XYSM17182122_H3D_C6D_EF(img_dim=224,stacking=False,randomcropping=False,denoising=False) :
 	ann_dir = './dataset-XYSM17182122-H3D-C6D-EF-latent/annotations'
 	img_dir = './dataset-XYSM17182122-H3D-C6D-EF-latent/images'
 	width = img_dim
 	height = img_dim
-	transform = Transform #TransformPlus
+	transform = Transform 
+	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising)
 	
 	return datasets
 
-def load_dataset_XYSM1_H3D_C6D_EFG(img_dim=224,stacking=False,randomcropping=False) :
+def load_dataset_XYSM1_H3D_C6D_EFG(img_dim=224,stacking=False,randomcropping=False,denoising=False) :
 	ann_dir = './dataset-XYSM1-H3D-C6D-EFG-latent/annotations'
 	img_dir = './dataset-XYSM1-H3D-C6D-EFG-latent/images'
 	width = img_dim
 	height = img_dim
-	transform = Transform #TransformPlus
+	transform = Transform 
+	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising)
+	
+	return datasets
+
+def load_dataset_XYSM1_H3D_C6D_EFG_fineGrid(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
+	ann_dir = './dataset-XYSM1-H3D-C6D-EFG-fineGrid-latent/annotations'
+	img_dir = './dataset-XYSM1-H3D-C6D-EFG-fineGrid-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform 
+	#transform = TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
+	
+	return datasets
+
+def load_dataset_XYSM1_H3D_C6D_EFG_finerGrid(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
+	ann_dir = './dataset-XYSM1-H3D-C6D-EFG-finerGrid-latent/annotations'
+	img_dir = './dataset-XYSM1-H3D-C6D-EFG-finerGrid-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform 
+	#transform = TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
 	
 	return datasets
 
@@ -888,6 +1066,8 @@ def test() :
 if __name__ == '__main__' :
 	#test_dataset()
 	#test_dataset_visualization()
-	test_error_visualization()
+	#test_error_visualization()
 	#test_stacking()
+	#test_noising()
+	test_iTrackerFormat()
 	#test()
