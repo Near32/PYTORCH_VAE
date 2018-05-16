@@ -948,7 +948,7 @@ def load_dataset_XYSM891215_H3D_C6D_EF(img_dim=224,stacking=False,denoising=Fals
 	
 	return datasets
 
-def load_dataset_XYSM17182122_H3D_C6D_EF(img_dim=224,stacking=False,randomcropping=False,denoising=False) :
+def load_dataset_XYSM17182122_H3D_C6D_EF(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
 	ann_dir = './dataset-XYSM17182122-H3D-C6D-EF-latent/annotations'
 	img_dir = './dataset-XYSM17182122-H3D-C6D-EF-latent/images'
 	width = img_dim
@@ -956,7 +956,7 @@ def load_dataset_XYSM17182122_H3D_C6D_EF(img_dim=224,stacking=False,randomcroppi
 	transform = Transform 
 	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
 	
 	return datasets
 
