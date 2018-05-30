@@ -103,11 +103,113 @@ TransformPlus = transforms.Compose([
 							ToTensor()
 							])
 
+def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
+	imgs = []
+
+	#img_folder = sorted( os.listdir(img_dir) )
+	img_folder = os.listdir(img_dir)
+	size = len(img_folder)
+
+	nbrann = size
+
+	def Img2Ann(img) :
+		return img[:-3]+'xml'
+
+	for idx_ann, image in enumerate( img_folder ) :
+		ann = Img2Ann(image)
+
+		img = {}
+
+		path2ann = os.path.join(ann_dir,ann)
+		tree = ET.parse(path2ann )
+		
+		print('DATASET :: LOADING : {:0.1f} %'.format( idx_ann/nbrann*100.0), end='\r', flush=True )
+
+		for elem in tree.iter() :
+			if 'filename' in elem.tag :
+				imgs += [img]
+				img['filename'] = elem.text
+
+			if 'width' in elem.tag :
+				img['width'] = int(float(elem.text))
+			if 'height' in elem.tag :
+				img['height'] = int(float(elem.text))
+			
+			if 'data' in elem.tag:
+				data = {}
+				img['data'] = data
+				
+				for attr in list(elem) :
+					if 'model' in attr.tag :
+						data['model'] = attr.text
+					if 'gaze_position' in attr.tag :
+						gaze = {}
+						data['gaze'] = gaze
+						
+						for attri in list(attr) :
+							if 'x' in attri.tag :
+								gaze['x'] = float(attri.text)
+							if 'y' in attri.tag :
+								gaze['y'] = float(attri.text)
+					if 'screen_size' in attr.tag :
+						screen = {}
+						data['screen'] = screen
+						
+						for attri in list(attr) :
+							if 'width' in attri.tag :
+								screen['width'] = float(attri.text)
+							if 'height' in attri.tag :
+								screen['height'] = float(attri.text)
+					if 'camera_screen' in attr.tag :
+						cam_screen = {}
+						data['camera_screen_center_offset'] = cam_screen
+						
+						for attri in list(attr) :
+							if 'x' in attri.tag :
+								cam_screen['x'] = float(attri.text)
+							if 'y' in attri.tag :
+								cam_screen['y'] = float(attri.text)
+							if 'fov' in attri.tag :
+								cam_screen['fov'] = float(attri.text)
+
+					if 'head' in attr.tag :
+						head = {}
+						data['head'] = head
+
+						for attri in list(attr) :
+							if 'head_camera_distance' in attri.tag :
+								head['head_camera_distance'] = float(attri.text)
+
+			if 'object' in elem.tag:
+				name = None
+				bndbox = [0,0,0,0]
+
+				for attr in list(elem) :
+					if 'name' in attr.tag :
+						name = attr.text
+					if 'bndbox' in attr.tag :
+						for attri in list(attr) :
+							if 'xmin' in attri.tag :
+								bndbox[0] = float(attri.text)
+							if 'ymin' in attri.tag :
+								bndbox[1] = float(attri.text)
+							if 'xmax' in attri.tag :
+								bndbox[2] = float(attri.text)
+							if 'ymax' in attri.tag :
+								bndbox[3] = float(attri.text)
+				
+				if name is not None :
+					img[name] = bndbox
+				
+						
+					
+	return imgs
+
 
 def parse_annotation_GazeRecognition(ann_dir) :
 	imgs = []
 
-	folder = os.listdir(ann_dir)
+	folder = sorted( os.listdir(ann_dir) )
 	nbrann = len(folder)
 	for idx_ann, ann in enumerate( folder ) :
 		img = {}
@@ -228,7 +330,7 @@ class DatasetGazeRecognition(Dataset) :
 		self.w = width
 		self.h = height
 
-		self.parsedAnnotations = parse_annotation_GazeRecognition(self.ann_dir)
+		self.parsedAnnotations = parse_image_annotation_GazeRecognition(self.ann_dir,self.img_dir)
 
 		self.transform = transform
 		#default transformations :
@@ -457,12 +559,12 @@ class DatasetGazeRecognition(Dataset) :
 			face_img = cv2.resize(face_img, (self.w,self.h) )
 			if self.iTrackerFormat :
 				face_grid = cv2.resize(face_grid, (self.w,self.h) )
+				face_grid = np.reshape(face_grid, (self.w,self.h,1) )
 			
 			if self.denoising :
 				nreye_img = noising(reye_img,level=self.noising_level,size=self.noising_size)
 				nleye_img = noising(leye_img,level=self.noising_level,size=self.noising_size)
 				if self.iTrackerFormat :
-					face_grid = np.reshape(face_grid, (self.w,self.h,1) )
 					nface_grid = noising(face_grid,level=self.noising_level,size=self.noising_size)
 					nface_img = noising(face_img,level=self.noising_level,size=self.noising_size)
 					nimg = np.concatenate( [nface_img, nreye_img, nleye_img,nface_grid], axis=2)
@@ -987,6 +1089,30 @@ def load_dataset_XYSM1_H3D_C6D_EFG_fineGrid(img_dim=224,stacking=False,randomcro
 def load_dataset_XYSM1_H3D_C6D_EFG_finerGrid(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
 	ann_dir = './dataset-XYSM1-H3D-C6D-EFG-finerGrid-latent/annotations'
 	img_dir = './dataset-XYSM1-H3D-C6D-EFG-finerGrid-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform 
+	#transform = TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
+	
+	return datasets
+
+def load_dataset_XYSM3_H3D_C6D_EFG_ELHM(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
+	ann_dir = './dataset-XYSM3-H3D-C6D-EFG-ELHM-latent/annotations'
+	img_dir = './dataset-XYSM3-H3D-C6D-EFG-ELHM-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform 
+	#transform = TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
+	
+	return datasets
+
+def load_dataset_XYSM1(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
+	ann_dir = './dataset-XYSM1-latent/annotations'
+	img_dir = './dataset-XYSM1-latent/images'
 	width = img_dim
 	height = img_dim
 	transform = Transform 
