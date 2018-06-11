@@ -179,6 +179,18 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 						for attri in list(attr) :
 							if 'head_camera_distance' in attri.tag :
 								head['head_camera_distance'] = float(attri.text)
+							if 'head_camera_distanceX' in attri.tag :
+								head['head_camera_distanceX'] = float(attri.text)
+							if 'head_camera_distanceY' in attri.tag :
+								head['head_camera_distanceY'] = float(attri.text)
+							if 'head_roll' in attri.tag :
+								head['head_roll'] = float(attri.text)
+							if 'head_pitch' in attri.tag :
+								head['head_pitch'] = float(attri.text)
+							if 'head_yaw' in attri.tag :
+								head['head_yaw'] = float(attri.text)
+
+						
 
 			if 'object' in elem.tag:
 				name = None
@@ -273,6 +285,18 @@ def parse_annotation_GazeRecognition(ann_dir) :
 						for attri in list(attr) :
 							if 'head_camera_distance' in attri.tag :
 								head['head_camera_distance'] = float(attri.text)
+							if 'head_camera_distanceX' in attri.tag :
+								head['head_camera_distanceX'] = float(attri.text)
+							if 'head_camera_distanceY' in attri.tag :
+								head['head_camera_distanceY'] = float(attri.text)
+							if 'head_roll' in attri.tag :
+								head['head_roll'] = float(attri.text)
+							if 'head_pitch' in attri.tag :
+								head['head_pitch'] = float(attri.text)
+							if 'head_yaw' in attri.tag :
+								head['head_yaw'] = float(attri.text)
+
+						
 
 			if 'object' in elem.tag:
 				name = None
@@ -302,7 +326,7 @@ def parse_annotation_GazeRecognition(ann_dir) :
 
 
 class DatasetGazeRecognition(Dataset) :
-	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=Transform,stacking=True,divide2=False,randomcropping=True,denoising=True,fov=True,iTrackerFormat=False):
+	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=Transform,stacking=True,divide2=False,randomcropping=True,denoising=True,fov=True,iTrackerFormat=False,iTrackerNoGridFormat=False):
 		super(DatasetGazeRecognition,self).__init__()
 		self.img_dir = img_dir
 		self.ann_dir = ann_dir
@@ -320,6 +344,11 @@ class DatasetGazeRecognition(Dataset) :
 
 		self.iTrackerFormat = iTrackerFormat
 		print('iTracker Format : ',self.iTrackerFormat)
+
+		self.iTrackerNoGridFormat = iTrackerNoGridFormat
+		print('iTrackerNOGRID Format : ',self.iTrackerNoGridFormat)
+
+		self.default_head_pose = torch.zeros((6))
 
 		self.testing = False
 		#self.nbrTestModels = 4
@@ -494,9 +523,13 @@ class DatasetGazeRecognition(Dataset) :
 			if self.divide2 :
 				scalar = 2.0
 			
+			mult1 = 0.2
+			mult2 = 0.1
 			# face :
-			fy1 = int( min( max(0,face_bndbox[1]/scalar), h) )
-			fy2 = int( min( max(0,face_bndbox[3]/scalar), h) )
+			fy1 = int( min( max(0,face_bndbox[1]*(1-mult1)/scalar), h) )
+			fy2 = int( min( max(0,face_bndbox[3]*(1+mult2)/scalar), h) )
+			#fx1 = int( min( max(0,face_bndbox[0]*(1-mult1)/scalar), w) )
+			#fx2 = int( min( max(0,face_bndbox[2]*(1+mult2)/scalar), w) )
 			fx1 = int( min( max(0,face_bndbox[0]/scalar), w) )
 			fx2 = int( min( max(0,face_bndbox[2]/scalar), w) )
 			
@@ -512,7 +545,7 @@ class DatasetGazeRecognition(Dataset) :
 			#face_img = np.expand_dims(  cv2.resize(face_img, (w,h) ), 2)
 			face_img = cv2.resize(face_img, (w,h) )
 			
-			if self.iTrackerFormat :
+			if self.iTrackerFormat and not(self.iTrackerNoGridFormat) :
 				face_grid = np.zeros((h,w,1))
 				face_grid[fy1:fy2, fx1:fx2,:] = 255.0
 				face_grid = cv2.resize(face_grid, (w,h) )
@@ -557,7 +590,7 @@ class DatasetGazeRecognition(Dataset) :
 			reye_img = cv2.resize( reye_img, (self.w, self.h) )
 			leye_img = cv2.resize( leye_img, (self.w, self.h) )
 			face_img = cv2.resize(face_img, (self.w,self.h) )
-			if self.iTrackerFormat :
+			if self.iTrackerFormat and not(self.iTrackerNoGridFormat) :
 				face_grid = cv2.resize(face_grid, (self.w,self.h) )
 				face_grid = np.reshape(face_grid, (self.w,self.h,1) )
 			
@@ -565,16 +598,23 @@ class DatasetGazeRecognition(Dataset) :
 				nreye_img = noising(reye_img,level=self.noising_level,size=self.noising_size)
 				nleye_img = noising(leye_img,level=self.noising_level,size=self.noising_size)
 				if self.iTrackerFormat :
-					nface_grid = noising(face_grid,level=self.noising_level,size=self.noising_size)
+					if not(self.iTrackerNoGridFormat) :
+						nface_grid = noising(face_grid,level=self.noising_level,size=self.noising_size)
 					nface_img = noising(face_img,level=self.noising_level,size=self.noising_size)
-					nimg = np.concatenate( [nface_img, nreye_img, nleye_img,nface_grid], axis=2)
+					if self.iTrackerNoGridFormat :
+						nimg = np.concatenate( [nface_img, nreye_img, nleye_img], axis=2)
+					else :
+						nimg = np.concatenate( [nface_img, nreye_img, nleye_img,nface_grid], axis=2)
 				else :
 					nimg = noising(img,level=self.noising_level,size=self.noising_size)
 					nimg = np.concatenate( [nimg, nreye_img, nleye_img], axis=2)
 			
 			# concatenation :
 			if self.iTrackerFormat :
-				img = np.concatenate( [face_img, reye_img, leye_img,face_grid], axis=2)
+				if self.iTrackerNoGridFormat :
+					nimg = np.concatenate( [face_img, reye_img, leye_img], axis=2)
+				else :
+					img = np.concatenate( [face_img, reye_img, leye_img,face_grid], axis=2)
 			else :
 				img = np.concatenate( [img, reye_img, leye_img], axis=2)
 		else :
@@ -592,17 +632,27 @@ class DatasetGazeRecognition(Dataset) :
 			if key == ord('q'):
 				break
 		'''
+
+		# GAZE :
 		gaze = copy.deepcopy(self.parsedAnnotations[idx]['data']['gaze'])
 		cam_screen_offset = copy.deepcopy(self.parsedAnnotations[idx]['data']['camera_screen_center_offset'])
 		for el in ['x','y'] :
 			gaze[el] += cam_screen_offset[el]
 		
+		# HEAD POSE :
+		try :
+			head_pose = copy.deepcopy( self.parsedAnnotations[idx]['data']['head'])
+			head_pose = torch.FloatTensor([ head_pose[k] for k in head_pose.keys()])
+		except Exception as e :
+			print(e)
+			head_pose = self.default_head_pose	
+
 		try :
 			fov = cam_screen_offset['fov']
 		except Exception as e :
-				print(e)
-				fov = self.default_fov
-				
+			print(e)
+			fov = self.default_fov
+			
 		sample = {'image':img, 'gaze':gaze}
 		if self.denoising :
 			nsample = {'image':nimg, 'gaze':gaze}
@@ -620,6 +670,8 @@ class DatasetGazeRecognition(Dataset) :
 
 		if self.fov :
 			sample.update( {'fov': torch.ones((1,1))*fov })
+
+		sample.update( {'head_pose':head_pose})
 
 		return sample
 
@@ -1086,7 +1138,7 @@ def load_dataset_XYSM1_H3D_C6D_EFG_fineGrid(img_dim=224,stacking=False,randomcro
 	
 	return datasets
 
-def load_dataset_XYSM1_H3D_C6D_EFG_finerGrid(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
+def load_dataset_XYSM1_H3D_C6D_EFG_finerGrid(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False) :
 	ann_dir = './dataset-XYSM1-H3D-C6D-EFG-finerGrid-latent/annotations'
 	img_dir = './dataset-XYSM1-H3D-C6D-EFG-finerGrid-latent/images'
 	width = img_dim
@@ -1094,11 +1146,11 @@ def load_dataset_XYSM1_H3D_C6D_EFG_finerGrid(img_dim=224,stacking=False,randomcr
 	transform = Transform 
 	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat)
 	
 	return datasets
 
-def load_dataset_XYSM3_H3D_C6D_EFG_ELHM(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
+def load_dataset_XYSM3_H3D_C6D_EFG_ELHM(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False) :
 	ann_dir = './dataset-XYSM3-H3D-C6D-EFG-ELHM-latent/annotations'
 	img_dir = './dataset-XYSM3-H3D-C6D-EFG-ELHM-latent/images'
 	width = img_dim
@@ -1106,11 +1158,11 @@ def load_dataset_XYSM3_H3D_C6D_EFG_ELHM(img_dim=224,stacking=False,randomcroppin
 	transform = Transform 
 	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat)
 	
 	return datasets
 
-def load_dataset_XYSM1(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False) :
+def load_dataset_XYSM1(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False) :
 	ann_dir = './dataset-XYSM1-latent/annotations'
 	img_dir = './dataset-XYSM1-latent/images'
 	width = img_dim
@@ -1118,7 +1170,19 @@ def load_dataset_XYSM1(img_dim=224,stacking=False,randomcropping=False,denoising
 	transform = Transform 
 	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat)
+	
+	return datasets
+
+def load_dataset_XYSM1_PitchYaw80deg_5EL(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False) :
+	ann_dir = './dataset-XYSM1-PitchYaw80deg-5EL-latent/annotations'
+	img_dir = './dataset-XYSM1-PitchYaw80deg-5EL-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform 
+	#transform = TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat)
 	
 	return datasets
 
