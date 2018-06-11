@@ -19,6 +19,83 @@ def randomizeBackground(img) :
 	ret = img*(1-mask)+random_background*mask 
 	return ret
 
+def randomizeHSV(img) :
+	hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+	#hsvrand = hsv.copy()
+	maxh = 179
+	maxs = 255
+	maxv = 255
+
+	randomH = True
+	if randomH :
+		randh = random.uniform(0.0,0.2)-0.1+1.0
+		hsvrandh = np.array( hsv[:,:,0]*randh, dtype=hsv.dtype)
+	else :
+		hsvrandh = hsv[:,:,0]
+	hsvrandh = cv2.normalize(hsvrandh, None, 0, maxh, cv2.NORM_MINMAX)
+	hsvrandh = np.expand_dims(hsvrandh,2)
+	
+	randomS = True#random.randint(0,1)
+	if randomS :
+		rands = random.uniform(0.0,1.0)-0.5+1.0
+		hsvrands = np.array( hsv[:,:,1]*rands, dtype=hsv.dtype)
+	else :
+		hsvrands = hsv[:,:,1]
+	hsvrands = cv2.normalize(hsvrands, None, 0, maxs, cv2.NORM_MINMAX)
+	hsvrands = np.expand_dims(hsvrands,2)
+
+	randomV = True#random.randint(0,1)
+	if randomV :
+		randv = random.uniform(0.0,2.0)
+		hsvrandv = np.array( hsv[:,:,2]*randv, dtype=hsv.dtype)
+	else :
+		hsvrandv = hsv[:,:,2]
+	hsvrandv = cv2.normalize(hsvrandv, None, 0, maxv, cv2.NORM_MINMAX)
+	hsvrandv = np.expand_dims(hsvrandv,2)
+
+	hsvrand = np.concatenate([hsvrandh,hsvrands,hsvrandv], axis=2)
+	
+	# filter background :
+	background_color = hsv[0,0]
+	mask = np.array(hsv == background_color,dtype=np.uint8)
+	hsvrand = hsvrand*(1-mask)+hsv*mask 
+	
+	imgrand = cv2.cvtColor(hsvrand, cv2.COLOR_HSV2RGB)
+	return imgrand 
+
+def randomizeHSVbis(img) :
+	hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+	
+	maxh = 179
+	maxs = 255
+	maxv = 255
+
+	randh = random.uniform(0.0,2.0)
+	hsvrandh = np.array( hsv[:,:,0]*randh, dtype=hsv.dtype)
+	hsvrandh = cv2.normalize(hsvrandh, None, 0, maxh, cv2.NORM_MINMAX)
+	hsvrandh = np.expand_dims(hsvrandh,2)
+	
+	rands = random.uniform(0.0,2.0)
+	hsvrands = np.array( hsv[:,:,1]*rands, dtype=hsv.dtype)
+	hsvrands = cv2.normalize(hsvrands, None, 0, maxs, cv2.NORM_MINMAX)
+	hsvrands = np.expand_dims(hsvrands,2)
+
+	randv = random.uniform(0.0,2.0)
+	hsvrandv = np.array( hsv[:,:,2]*randv, dtype=hsv.dtype)
+	hsvrandv = cv2.normalize(hsvrandv, None, 0, maxv, cv2.NORM_MINMAX)
+	hsvrandv = np.expand_dims(hsvrandv,2)
+
+	hsvrand = np.concatenate([hsvrandh,hsvrands,hsvrandv], axis=2)
+	
+	# filter background :
+	background_color = hsv[0,0]
+	mask = np.array(hsv == background_color,dtype=np.uint8)
+	hsvrand = hsvrand*(1-mask)+hsv*mask 
+	
+	imgrand = cv2.cvtColor(hsvrand, cv2.COLOR_HSV2RGB)
+	
+	return imgrand 
+
 
 def noising(img,level=10,size=32) :	
 	# multiplicative noise, with preserved channels:
@@ -504,6 +581,7 @@ class DatasetGazeRecognition(Dataset) :
 			try :
 				path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
 				img = cv2.imread(path)
+				denoising_img = randomizeHSV(img)
 				img = randomizeBackground(img)
 				h,w,c = img.shape 
 				issue = False
@@ -595,18 +673,25 @@ class DatasetGazeRecognition(Dataset) :
 				face_grid = np.reshape(face_grid, (self.w,self.h,1) )
 			
 			if self.denoising :
-				nreye_img = noising(reye_img,level=self.noising_level,size=self.noising_size)
-				nleye_img = noising(leye_img,level=self.noising_level,size=self.noising_size)
+				dreye_img = denoising_img[ry1:ry2, rx1:rx2,:]
+				dreye_img = cv2.resize(dreye_img, (self.w,self.h) )
+				dleye_img = denoising_img[ly1:ly2, lx1:lx2,:]
+				dleye_img = cv2.resize(dleye_img, (self.w,self.h) )
+				nreye_img = noising(dreye_img,level=self.noising_level,size=self.noising_size)
+				nleye_img = noising(dleye_img,level=self.noising_level,size=self.noising_size)
 				if self.iTrackerFormat :
 					if not(self.iTrackerNoGridFormat) :
 						nface_grid = noising(face_grid,level=self.noising_level,size=self.noising_size)
-					nface_img = noising(face_img,level=self.noising_level,size=self.noising_size)
+					dface_img = denoising_img[fy1:fy2, fx1:fx2,:]
+					dface_img = cv2.resize(dface_img, (self.w,self.h) )
+					nface_img = noising(dface_img,level=self.noising_level,size=self.noising_size)
 					if self.iTrackerNoGridFormat :
 						nimg = np.concatenate( [nface_img, nreye_img, nleye_img], axis=2)
 					else :
 						nimg = np.concatenate( [nface_img, nreye_img, nleye_img,nface_grid], axis=2)
 				else :
-					nimg = noising(img,level=self.noising_level,size=self.noising_size)
+					denoising_img = cv2.resize( denoising_img, (self.w, self.h) )
+					nimg = noising(denoising_img,level=self.noising_level,size=self.noising_size)
 					nimg = np.concatenate( [nimg, nreye_img, nleye_img], axis=2)
 			
 			# concatenation :
@@ -931,7 +1016,7 @@ def test_stacking() :
 def test_noising() :
 	from time import time 
 	#dataset = load_dataset_XYSM2_C3D_EF(stacking=True)
-	dataset = load_dataset_XYSM1_H3D_C6D_EFG_fineGrid(img_dim=224,stacking=True,randomcropping=True,denoising=True)
+	dataset = load_dataset_XYSM1(img_dim=224,stacking=True,randomcropping=True,denoising=True)
 
 	idx = 0 
 	sample = dataset[0]
@@ -952,8 +1037,11 @@ def test_noising() :
 			t = time()
 			sample = dataset[idx]
 			print('ELT : {} seconds.'.format(time()-t))
+			oimg = sample['image']
 			img = sample['noised_image']
+			oimg0 = oimg[:,:,:].numpy().transpose((1,2,0))
 			img0 = img[:,:,:].numpy().transpose((1,2,0))
+			img0 = np.concatenate([oimg0,img0], axis=1)
 			img0 = np.concatenate( [ img0[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
 
 
@@ -1258,6 +1346,6 @@ if __name__ == '__main__' :
 	#test_dataset_visualization()
 	#test_error_visualization()
 	#test_stacking()
-	#test_noising()
-	test_iTrackerFormat()
+	test_noising()
+	#test_iTrackerFormat()
 	#test()
