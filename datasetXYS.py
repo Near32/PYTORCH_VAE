@@ -12,10 +12,13 @@ from torch.utils.data import Dataset
 
 import cv2
 
-def randomizeBackground(img) :
+def randomizeBackground(img,black=False) :
 	background_color = img[0,0]
 	mask = np.array(img == background_color,dtype=np.uint8)
-	random_background = np.random.randint(255, size=img.shape,dtype=np.uint8)
+	if not(black) :
+		random_background = np.random.randint(255, size=img.shape,dtype=np.uint8)
+	else :
+		random_background = np.zeros(img.shape,dtype=np.uint8)
 	ret = img*(1-mask)+random_background*mask 
 	return ret
 
@@ -582,7 +585,7 @@ class DatasetGazeRecognition(Dataset) :
 				path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
 				img = cv2.imread(path)
 				denoising_img = randomizeHSV(img)
-				img = randomizeBackground(img)
+				img = randomizeBackground(img,black=True)
 				h,w,c = img.shape 
 				issue = False
 			except Exception as e :
@@ -1265,6 +1268,18 @@ def load_dataset_XYSM1(img_dim=224,stacking=False,randomcropping=False,denoising
 def load_dataset_XYSM1_PitchYaw80deg_5EL(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False) :
 	ann_dir = './dataset-XYSM1-PitchYaw80deg-5EL-latent/annotations'
 	img_dir = './dataset-XYSM1-PitchYaw80deg-5EL-latent/images'
+	width = img_dim
+	height = img_dim
+	transform = Transform 
+	#transform = TransformPlus
+
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat)
+	
+	return datasets
+
+def load_datasetXYSM2_Roll5Pitch10_60deg_CEl4F_G10X5Y(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False) :
+	ann_dir = './datasetXYSM2-Roll5Pitch10+60deg+CEl4F+G10X5Y/annotations'
+	img_dir = './datasetXYSM2-Roll5Pitch10+60deg+CEl4F+G10X5Y/images'
 	width = img_dim
 	height = img_dim
 	transform = Transform 
