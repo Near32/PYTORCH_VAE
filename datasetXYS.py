@@ -10,6 +10,10 @@ import torch.nn.functional as F
 from torchvision import transforms
 from torch.utils.data import Dataset
 
+from math import pi 
+import seaborn as sns 
+import matplotlib.pyplot as plt 
+
 import cv2
 
 def randomizeBackground(img,black=False) :
@@ -29,7 +33,7 @@ def randomizeHSV(img) :
 	maxs = 255
 	maxv = 255
 
-	randomH = True
+	randomH = random.randint(0,1)
 	if randomH :
 		randh = random.uniform(0.0,0.2)-0.1+1.0
 		hsvrandh = np.array( hsv[:,:,0]*randh, dtype=hsv.dtype)
@@ -38,7 +42,7 @@ def randomizeHSV(img) :
 	hsvrandh = cv2.normalize(hsvrandh, None, 0, maxh, cv2.NORM_MINMAX)
 	hsvrandh = np.expand_dims(hsvrandh,2)
 	
-	randomS = True#random.randint(0,1)
+	randomS = random.randint(0,1)
 	if randomS :
 		rands = random.uniform(0.0,1.0)-0.5+1.0
 		hsvrands = np.array( hsv[:,:,1]*rands, dtype=hsv.dtype)
@@ -47,9 +51,9 @@ def randomizeHSV(img) :
 	hsvrands = cv2.normalize(hsvrands, None, 0, maxs, cv2.NORM_MINMAX)
 	hsvrands = np.expand_dims(hsvrands,2)
 
-	randomV = True#random.randint(0,1)
+	randomV = random.randint(0,1)
 	if randomV :
-		randv = random.uniform(0.0,2.0)
+		randv = random.normalvariate(0.0,1.0)+1.0
 		hsvrandv = np.array( hsv[:,:,2]*randv, dtype=hsv.dtype)
 	else :
 		hsvrandv = hsv[:,:,2]
@@ -102,7 +106,9 @@ def randomizeHSVbis(img) :
 
 def noising(img,level=10,size=32) :	
 	# multiplicative noise, with preserved channels:
-	noise = np.concatenate( [ np.expand_dims(np.random.rand( *img.shape[:2]), 2) ] * img.shape[2], axis=2)
+	#noise = np.concatenate( [ np.expand_dims(np.random.rand( *img.shape[:2]), 2) ] * img.shape[2], axis=2)
+	noisesize = img.shape[:2]
+	noise = np.concatenate( [ np.expand_dims(np.random.normal( loc=0.5, scale=0.5,size=noisesize ), 2) ] * img.shape[2], axis=2)
 	
 	img = img * noise 
 
@@ -189,6 +195,10 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 	#img_folder = sorted( os.listdir(img_dir) )
 	img_folder = os.listdir(img_dir)
 	size = len(img_folder)
+	
+	lr = list()
+	lp = list()
+	ly = list()
 
 	nbrann = size
 
@@ -265,11 +275,13 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 								head['head_camera_distanceY'] = float(attri.text)
 							if 'head_roll' in attri.tag :
 								head['head_roll'] = float(attri.text)
+								lr.append(head['head_roll']*180/pi)
 							if 'head_pitch' in attri.tag :
 								head['head_pitch'] = float(attri.text)
+								lp.append(head['head_pitch']*180/pi)
 							if 'head_yaw' in attri.tag :
 								head['head_yaw'] = float(attri.text)
-
+								ly.append(head['head_yaw']*180/pi)
 						
 
 			if 'object' in elem.tag:
@@ -293,8 +305,16 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 				if name is not None :
 					img[name] = bndbox
 				
-						
-					
+	lr = np.asarray(lr)
+	print('ROLL :: mean {} // var {}'.format(lr.mean(),lr.std()))					
+	lp = np.asarray(lp)
+	print('PITCH :: mean {} // var {}'.format(lp.mean(),lp.std()))					
+	ly = np.asarray(ly)
+	print('YAW :: mean {} // var {}'.format(ly.mean(),ly.std()))					
+				
+	#sns.jointplot(x=lr,y=lp,kind='kde')
+	#plt.show()
+
 	return imgs
 
 
@@ -470,8 +490,12 @@ class DatasetGazeRecognition(Dataset) :
 				ret = self.testsize
 			return ret 
 		else :
-			return self.testsize
-
+			#return self.testsize
+			return int(self.testsize/10)
+		'''
+		return len(self.parsedAnnotations)
+		'''
+		
 	def nbrTasks(self) :
 		return len(self.idxModels.keys())
 
@@ -576,8 +600,17 @@ class DatasetGazeRecognition(Dataset) :
 
 	def __getitem__(self,idx) :
 		if self.testing :
-			idx = idx%self.testsize
+			idx = idx % self.testsize
 			idx = idx + self.testoffset
+		else :
+			idx = idx % len(self)
+			model_idx = 0
+			model_name = self.idx2model[model_idx]
+			while idx >= len(self.idxModels[model_name]) :
+				idx -= len(self.idxModels[model_name])
+				model_idx +=1
+				model_name = self.idx2model[model_idx]
+
 
 		issue = True
 		while issue :
@@ -730,7 +763,7 @@ class DatasetGazeRecognition(Dataset) :
 		# HEAD POSE :
 		try :
 			head_pose = copy.deepcopy( self.parsedAnnotations[idx]['data']['head'])
-			head_pose = torch.FloatTensor([ head_pose[k] for k in head_pose.keys()])
+			head_pose = torch.FloatTensor([ head_pose[k] for k in sorted(head_pose.keys() ) ])
 		except Exception as e :
 			print(e)
 			head_pose = self.default_head_pose	
