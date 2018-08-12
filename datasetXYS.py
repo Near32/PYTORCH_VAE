@@ -206,8 +206,8 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 		return img[:-3]+'xml'
 
 	for idx_ann, image in enumerate( img_folder ) :
-		#ann = Img2Ann(image)
-		ann = Img2GazeDirFLAnn(image)
+		#ann = Img2GazeDirFLAnn(image)
+		ann = Img2GazeDirEyesPoseFLAnn(image)
 
 		img = {}
 
@@ -216,7 +216,7 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 			tree = ET.parse(path2ann )
 		except Exception as e :
 			try :
-				ann = Img2Ann(image)
+				ann = Img2GazeDirEyesPoseFLAnn(image)
 				path2ann = os.path.join(ann_dir,ann)
 				tree = ET.parse(path2ann )
 			except Exception as e2 :
@@ -227,7 +227,8 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 		for elem in tree.iter() :
 			if 'filename' in elem.tag :
 				imgs += [img]
-				img['filename'] = GazeDirFLFilename2Filename(elem.text)
+				#img['filename'] = GazeDirFLFilename2Filename(elem.text)
+				img['filename'] = GazeDirEyesPoseFLFilename2Filename(elem.text)
 				
 			if 'width' in elem.tag :
 				img['width'] = int(float(elem.text))
@@ -378,6 +379,70 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 									if 'z' in attrii.tag :
 										angle['z'] = float(attrii.text)
 								
+			if 'EyesPose' in elem.tag:
+				EyesPose = {'right':None,'left':None}
+				img['EyesPose'] = EyesPose
+
+				for attr in list(elem) :
+					if 'right' in attr.tag :
+						right = {}
+						EyesPose['right'] = right
+						
+						for attri in list(attr) :
+							if 'position' in attri.tag :
+								position = {}
+								right['position'] = position 
+								
+								for attrii in list(attri) :
+									if 'x' in attrii.tag :
+										position['x'] = float(attrii.text)
+									if 'y' in attrii.tag :
+										position['y'] = float(attrii.text)
+									if 'z' in attrii.tag :
+										position['z'] = float(attrii.text)
+								
+							if 'angle' in attri.tag :
+								angle = {}
+								right['angle'] = angle 
+
+								for attrii in list(attri) :
+									if 'roll' in attrii.tag :
+										angle['roll'] = float(attrii.text)
+									if 'pitch' in attrii.tag :
+										angle['pitch'] = float(attrii.text)
+									if 'yaw' in attrii.tag :
+										angle['yaw'] = float(attrii.text)
+								
+
+					if 'left' in attr.tag :
+						left = {}
+						EyesPose['left'] = left
+						
+						for attri in list(attr) :
+							if 'position' in attri.tag :
+								position = {}
+								left['position'] = position 
+								
+								for attrii in list(attri) :
+									if 'x' in attrii.tag :
+										position['x'] = float(attrii.text)
+									if 'y' in attrii.tag :
+										position['y'] = float(attrii.text)
+									if 'z' in attrii.tag :
+										position['z'] = float(attrii.text)
+								
+							if 'angle' in attri.tag :
+								angle = {}
+								left['angle'] = angle 
+
+								for attrii in list(attri) :
+									if 'roll' in attrii.tag :
+										angle['roll'] = float(attrii.text)
+									if 'pitch' in attrii.tag :
+										angle['pitch'] = float(attrii.text)
+									if 'yaw' in attrii.tag :
+										angle['yaw'] = float(attrii.text)
+
 
 			if 'FacialLandmarks' in elem.tag:
 				FacialLandmarks = {}
@@ -408,12 +473,12 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 
 def Img2Ann(img) :
 	return img[:-3]+'xml'
-def Img2GazeDirFLAnn(img) :
-	return 'GazeDirFacialLandmarks.'+img[:-3]+'xml'
+def Img2GazeDirEyesPoseFLAnn(img) :
+	return 'GazeDirEyesPoseFacialLandmarks.'+img[:-3]+'xml'
 
-def GazeDirFLFilename2Filename(text) :
-	if len(text) > 23:
-		return text[23:]
+def GazeDirEyesPoseFLFilename2Filename(text) :
+	if len(text) > 31:
+		return text[31:]
 	else :
 		return text 
 
@@ -713,6 +778,7 @@ class DatasetGazeRecognition(Dataset) :
 		self.default_head_pose = torch.zeros((6))
 		self.default_facialLandmarks = torch.zeros((16,2))
 		self.default_gaze_directions = torch.zeros((3*2))
+		self.default_eyes_pose = torch.zeros((3*4))
 
 		self.testing = False
 		#self.nbrTestModels = 4
@@ -1095,6 +1161,30 @@ class DatasetGazeRecognition(Dataset) :
 			print('EXCEPTION LOADING GAZE DIRECTIONS :',e)
 			gaze_directions = self.default_gaze_directions	
 
+		# Eyes Pose :
+		try :
+			eyes_pose_r = copy.deepcopy( self.parsedAnnotations[idx]['EyesPose']['right'])
+			eyes_pose_r_p = eyes_pose_r['position']
+			eyes_pose_r_p = [eyes_pose_r_p['x'], eyes_pose_r_p['y'], eyes_pose_r_p['z'] ] 
+			eyes_pose_r_a = eyes_pose_r['angle']
+			eyes_pose_r_a = [eyes_pose_r_a['roll']*180.0/3.1415, eyes_pose_r_a['pitch']*180.0/3.1415, eyes_pose_r_a['yaw']*180.0/3.1415]
+
+			eyes_pose_l = copy.deepcopy( self.parsedAnnotations[idx]['EyesPose']['left'])
+			eyes_pose_l_p = eyes_pose_l['position']
+			eyes_pose_l_p = [eyes_pose_l_p['x'], eyes_pose_l_p['y'], eyes_pose_l_p['z'] ] 
+			eyes_pose_l_a = eyes_pose_l['angle']
+			eyes_pose_l_a = [eyes_pose_l_a['roll']*180.0/3.1415, eyes_pose_l_a['pitch']*180.0/3.1415, eyes_pose_l_a['yaw']*180.0/3.1415]
+			
+			eyes_pose_r_p = torch.FloatTensor(eyes_pose_r_p).view((-1))
+			eyes_pose_r_a = torch.FloatTensor(eyes_pose_r_a).view((-1))
+			eyes_pose_l_p = torch.FloatTensor(eyes_pose_l_p).view((-1))
+			eyes_pose_l_a = torch.FloatTensor(eyes_pose_l_a).view((-1))
+			
+			eyes_pose = torch.cat( [eyes_pose_r_p, eyes_pose_l_p, eyes_pose_r_a, eyes_pose_l_a],dim=0)
+		except Exception as e :
+			print('EXCEPTION LOADING EYES POSE :',e)
+			eyes_pose = self.default_eyes_pose	
+
 		try :
 			fov = cam_screen_offset['fov']
 		except Exception as e :
@@ -1122,6 +1212,7 @@ class DatasetGazeRecognition(Dataset) :
 		sample.update( {'head_pose':head_pose})
 		sample.update( {'facialLandmarks':facialLandmarks})
 		sample.update( {'gazeDirections':gaze_directions})
+		sample.update( {'eyesPose':eyes_pose})
 
 		return sample
 
