@@ -193,7 +193,7 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 	imgs = []
 
 	#img_folder = sorted( os.listdir(img_dir) )
-	img_folder = os.listdir(img_dir)#[:20000]
+	img_folder = os.listdir(img_dir)[:10000]
 	size = len(img_folder)
 	
 	lr = list()
@@ -753,7 +753,7 @@ def parse_annotation_GazeRecognition(ann_dir) :
 
 
 class DatasetGazeRecognition(Dataset) :
-	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=Transform,stacking=True,divide2=False,randomcropping=True,denoising=True,fov=True,iTrackerFormat=False,iTrackerNoGridFormat=False):
+	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=Transform,stacking=True,divide2=False,randomcropping=True,denoising=True,fov=True,iTrackerFormat=False,iTrackerNoGridFormat=False,eyesPose=False):
 		super(DatasetGazeRecognition,self).__init__()
 		self.img_dir = img_dir
 		self.ann_dir = ann_dir
@@ -774,6 +774,10 @@ class DatasetGazeRecognition(Dataset) :
 
 		self.iTrackerNoGridFormat = iTrackerNoGridFormat
 		print('iTrackerNOGRID Format : ',self.iTrackerNoGridFormat)
+
+		self.usingEyesPose = eyesPose
+		print('EyesPose output : ',self.usingEyesPose)
+
 
 		self.default_head_pose = torch.zeros((6))
 		self.default_facialLandmarks = torch.zeros((16,2))
@@ -1163,24 +1167,27 @@ class DatasetGazeRecognition(Dataset) :
 
 		# Eyes Pose :
 		try :
-			eyes_pose_r = copy.deepcopy( self.parsedAnnotations[idx]['EyesPose']['right'])
-			eyes_pose_r_p = eyes_pose_r['position']
-			eyes_pose_r_p = [eyes_pose_r_p['x'], eyes_pose_r_p['y'], eyes_pose_r_p['z'] ] 
-			eyes_pose_r_a = eyes_pose_r['angle']
-			eyes_pose_r_a = [eyes_pose_r_a['roll']*180.0/3.1415, eyes_pose_r_a['pitch']*180.0/3.1415, eyes_pose_r_a['yaw']*180.0/3.1415]
+			if self.usingEyesPose:
+				eyes_pose_r = copy.deepcopy( self.parsedAnnotations[idx]['EyesPose']['right'])
+				eyes_pose_r_p = eyes_pose_r['position']
+				eyes_pose_r_p = [eyes_pose_r_p['x'], eyes_pose_r_p['y'], eyes_pose_r_p['z'] ] 
+				eyes_pose_r_a = eyes_pose_r['angle']
+				eyes_pose_r_a = [eyes_pose_r_a['roll']*180.0/3.1415, eyes_pose_r_a['pitch']*180.0/3.1415, eyes_pose_r_a['yaw']*180.0/3.1415]
 
-			eyes_pose_l = copy.deepcopy( self.parsedAnnotations[idx]['EyesPose']['left'])
-			eyes_pose_l_p = eyes_pose_l['position']
-			eyes_pose_l_p = [eyes_pose_l_p['x'], eyes_pose_l_p['y'], eyes_pose_l_p['z'] ] 
-			eyes_pose_l_a = eyes_pose_l['angle']
-			eyes_pose_l_a = [eyes_pose_l_a['roll']*180.0/3.1415, eyes_pose_l_a['pitch']*180.0/3.1415, eyes_pose_l_a['yaw']*180.0/3.1415]
-			
-			eyes_pose_r_p = torch.FloatTensor(eyes_pose_r_p).view((-1))
-			eyes_pose_r_a = torch.FloatTensor(eyes_pose_r_a).view((-1))
-			eyes_pose_l_p = torch.FloatTensor(eyes_pose_l_p).view((-1))
-			eyes_pose_l_a = torch.FloatTensor(eyes_pose_l_a).view((-1))
-			
-			eyes_pose = torch.cat( [eyes_pose_r_p, eyes_pose_l_p, eyes_pose_r_a, eyes_pose_l_a],dim=0)
+				eyes_pose_l = copy.deepcopy( self.parsedAnnotations[idx]['EyesPose']['left'])
+				eyes_pose_l_p = eyes_pose_l['position']
+				eyes_pose_l_p = [eyes_pose_l_p['x'], eyes_pose_l_p['y'], eyes_pose_l_p['z'] ] 
+				eyes_pose_l_a = eyes_pose_l['angle']
+				eyes_pose_l_a = [eyes_pose_l_a['roll']*180.0/3.1415, eyes_pose_l_a['pitch']*180.0/3.1415, eyes_pose_l_a['yaw']*180.0/3.1415]
+				
+				eyes_pose_r_p = torch.FloatTensor(eyes_pose_r_p).view((-1))
+				eyes_pose_r_a = torch.FloatTensor(eyes_pose_r_a).view((-1))
+				eyes_pose_l_p = torch.FloatTensor(eyes_pose_l_p).view((-1))
+				eyes_pose_l_a = torch.FloatTensor(eyes_pose_l_a).view((-1))
+				
+				eyes_pose = torch.cat( [eyes_pose_r_p, eyes_pose_l_p, eyes_pose_r_a, eyes_pose_l_a],dim=0)
+			else :
+				eyes_pose = self.default_eyes_pose	
 		except Exception as e :
 			print('EXCEPTION LOADING EYES POSE :',e)
 			eyes_pose = self.default_eyes_pose	
@@ -1212,7 +1219,8 @@ class DatasetGazeRecognition(Dataset) :
 		sample.update( {'head_pose':head_pose})
 		sample.update( {'facialLandmarks':facialLandmarks})
 		sample.update( {'gazeDirections':gaze_directions})
-		sample.update( {'eyesPose':eyes_pose})
+		if self.usingEyesPose:
+			sample.update( {'eyesPose':eyes_pose})
 
 		return sample
 
@@ -1757,7 +1765,7 @@ def load_datasetXYSM4_0389_Roll10Pitch10_60deg(img_dim=224,stacking=False,random
 	return datasets
 
 
-def load_datasetX6Y3S5M6_121517182122_Roll4Pitch4_40deg_CX5_30cm_CY5_30cm(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False) :
+def load_datasetX6Y3S5M6_121517182122_Roll4Pitch4_40deg_CX5_30cm_CY5_30cm(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False,eyesPose=False) :
 	ann_dir = './dataset121517182122/annotations'
 	img_dir = './dataset121517182122/images'
 	#ann_dir = './dataset-X6Y3S5M6-121517182122-Roll4Pitch4+40deg-CX5+30cm-CY5+30cm/annotations'
@@ -1767,7 +1775,7 @@ def load_datasetX6Y3S5M6_121517182122_Roll4Pitch4_40deg_CX5_30cm_CY5_30cm(img_di
 	transform = Transform 
 	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat,eyesPose=eyesPose)
 	
 	return datasets
 
