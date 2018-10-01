@@ -16,13 +16,78 @@ import matplotlib.pyplot as plt
 
 import cv2
 
-def randomizeBackground(img,black=False) :
+#def generateWorleyNoise(outshape=256, imgx=128, imgy=128, n=100, m=0) :
+def generateWorleyNoise(imgx=64, imgy=64, n=100, m=0) :
+	image = np.zeros(shape=(imgx,imgy), dtype=np.uint8)
+	val = 1
+	seedsX = [random.randint(0, imgx - 1) for i in range(n)]
+	seedsY = [random.randint(0, imgy - 1) for i in range(n)]
+
+	# find max distance
+	maxDist = 0.0
+	for ky in range(imgy):
+		  for kx in range(imgx):
+		      #dists = [math.hypot(seedsX[i] - kx, seedsY[i] - ky) for i in range(n)]
+		      #dists = [ abs(seedsX[i] - kx)+abs( seedsY[i] - ky) for i in range(n)]
+		      dists = [ max( abs(seedsX[i] - kx),abs( seedsY[i] - ky) ) for i in range(n)]
+		      
+		      dists.sort()
+		      if dists[m] > maxDist: maxDist = dists[m]
+
+	# paint
+	for ky in range(imgy):
+		  for kx in range(imgx):
+		      #dists = [math.hypot(seedsX[i] - kx, seedsY[i] - ky) for i in range(n)]
+			    #dists = [ abs(seedsX[i] - kx)+abs( seedsY[i] - ky) for i in range(n)]
+			    dists = [ max( abs(seedsX[i] - kx),abs( seedsY[i] - ky) ) for i in range(n)]
+			    
+			    scalar = (1+random.random())
+			    
+			    dists.sort()
+			    
+			    #c = int(round(255 * dists[m] / maxDist))
+			    
+			    #c = int(round(255 * abs(dists[m]-dists[m+1]) / maxDist))
+			    #c = int(round(255 * abs(dists[m+2]-dists[m+1]-dists[m]) / maxDist))
+			    
+			    #c = int(round(255 * ( abs(dists[m+3]-dists[m+2])+abs(dists[m+1]-dists[m]) )/ maxDist*1.25))
+			    #c = int(round(255 * ( abs(dists[m]-dists[m+2])-abs(dists[m]-dists[m+1]) )/ maxDist*2))
+			    
+			    #c = int(round(255 * ( abs(dists[m+3]-dists[m+2])+abs(dists[m+1]-dists[m]) )/ maxDist*(1.2) ))
+			    c = int(round(255 * ( abs(dists[m+3]-dists[m+2])+abs(dists[m+1]-dists[m]) )/ maxDist*scalar ))
+			    
+			    #c = int(round(255 * ( abs(dists[m]-dists[m+2])-abs(dists[m]-dists[m+1]) )/ maxDist*random.randint(1,4)))
+			    #c = int(round(255 * ( abs(dists[m]-dists[m+2])-abs(dists[m]-dists[m+1]) )/ maxDist*(1+random.random()) ) )
+			    
+			    r = c
+			    g = c
+			    b = c
+			    '''
+			    if random.randint(0,val) <= 1*val/2 :
+			    	val -= 1
+			    	if val<1 : val = 1
+			    	r = int(round(255 * abs(dists[m]-dists[m+1]) / maxDist))
+			    	g = int(round(255 * abs(dists[m+2]-dists[m+3]) / maxDist))
+			    	b = int(round(255 * abs(dists[m+4]-dists[m+5]) / maxDist))
+			    else :
+			    	val += 1
+			    	if val>10 : val=10
+			    '''
+			    
+			    image[kx, ky] = c#(r, g, b) 
+
+	return image 
+
+def randomizeBackground(img,black=False,worley=None) :
 	background_color = img[0,0]
 	mask = np.array(img == background_color,dtype=np.uint8)
-	if not(black) :
-		random_background = np.random.randint(255, size=img.shape,dtype=np.uint8)
-	else :
+	if worley is not None :
+		random_background = worley
+		random_background = np.expand_dims( cv2.resize(random_background, (img.shape[0], img.shape[1])) , axis=2)
+	elif black :
 		random_background = np.zeros(img.shape,dtype=np.uint8)
+	else :
+		random_background = np.random.randint(255, size=img.shape,dtype=np.uint8)
 	ret = img*(1-mask)+random_background*mask 
 	return ret
 
@@ -105,8 +170,10 @@ def randomizeHSVbis(img) :
 
 
 def noising(img,level=10,size=32) :	
+	shape = img.shape
+	img = cv2.resize(img, (224,224) )
 	# multiplicative noise, with preserved channels:
-	#noise = np.concatenate( [ np.expand_dims(np.random.rand( *img.shape[:2]), 2) ] * img.shape[2], axis=2)
+	#noise = np.concatenate( [ np.expand_dims(np.random.rand( *img.shape[:2]), 2) ] * img.shape[2], axis=2)	
 	noisesize = img.shape[:2]
 	noise = np.concatenate( [ np.expand_dims(np.random.normal( loc=0.5, scale=0.5,size=noisesize ), 2) ] * img.shape[2], axis=2)
 	
@@ -121,6 +188,7 @@ def noising(img,level=10,size=32) :
 
 		img[mx:mx+mw,my:my+mh,:] *= 0.0
 	
+	img = cv2.resize(img, (shape[0],shape[0]) )
 	return img
 
 class RandomRecolorNormalize(object) :
@@ -193,7 +261,7 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 	imgs = []
 
 	#img_folder = sorted( os.listdir(img_dir) )
-	img_folder = os.listdir(img_dir)[:10000]
+	img_folder = os.listdir(img_dir)[:40000]
 	size = len(img_folder)
 	
 	lr = list()
@@ -753,14 +821,23 @@ def parse_annotation_GazeRecognition(ann_dir) :
 
 
 class DatasetGazeRecognition(Dataset) :
-	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=Transform,stacking=True,divide2=False,randomcropping=True,denoising=True,fov=True,iTrackerFormat=False,iTrackerNoGridFormat=False,eyesPose=False):
+	def __init__(self,img_dir,ann_dir,width=224,height=224,transform=Transform,stacking=True,divide2=False,randomcropping=True,denoising=True,fov=True,iTrackerFormat=False,iTrackerNoGridFormat=False,eyesPose=False,usingWorley=False,withQuery=False):
 		super(DatasetGazeRecognition,self).__init__()
 		self.img_dir = img_dir
 		self.ann_dir = ann_dir
 		self.stacking = stacking
 		self.divide2 = divide2
+		self.usingWorley = usingWorley
+		self.worley_lcount = 512
+		self.worley_counter = self.worley_lcount+1 
+		print('WORLEY NOISE DISTRACTORS : ',self.usingWorley)
+		
 		self.randomcropping = randomcropping
 		print('RANDOM CROPPING : ',self.randomcropping)
+		
+		self.withQuery = withQuery
+		print('QUERY : ',self.withQuery)
+		
 		self.fov = fov
 		self.default_fov = 4.1
 		print('FOV INPUT : ',self.fov)
@@ -785,8 +862,7 @@ class DatasetGazeRecognition(Dataset) :
 		self.default_eyes_pose = torch.zeros((3*4))
 
 		self.testing = False
-		#self.nbrTestModels = 4
-		self.nbrTestModels = 1
+		self.nbrTestModels = 2
 		self.testsize = 0
 		self.testoffset = 0
 
@@ -838,6 +914,9 @@ class DatasetGazeRecognition(Dataset) :
 
 	def nbrSample4Task(self,model_idx) :
 		return len(self.idxModels[ self.idx2model[model_idx] ] )
+
+	def nbrSample4Model(self,model_name) :
+		return len(self.idxModels[ model_name ] )
 
 	def generateFewShotLearningTask(self, task_idx, nbrSample=100) :
 		model_idx = task_idx
@@ -935,7 +1014,23 @@ class DatasetGazeRecognition(Dataset) :
 
 		return sample
 
-	def __getitem__(self,idx) :
+	def getSample4Model(self, model, sample_idx,query=False,randomcropping=False) :
+		idxsample = self.idxModels[model][sample_idx]
+		sample = self.__getitem__(idxsample,query=query,randomcropping=randomcropping)
+
+		return sample
+
+	def __getitem__(self,idx,query=False,randomcropping=None) :
+		if randomcropping is None :
+			randomcropping = self.randomcropping
+
+		if self.usingWorley :
+			if self.worley_counter > self.worley_lcount :
+				self.worley_counter = 0 
+				self.worleynoise = generateWorleyNoise()
+			else :
+				self.worley_counter += 1
+
 		if self.testing :
 			idx = idx % len(self)
 			model_idx = -1
@@ -984,10 +1079,14 @@ class DatasetGazeRecognition(Dataset) :
 			try :
 				path = os.path.join(self.img_dir,self.parsedAnnotations[idx]['filename']+'.png' )
 				#print(path)
-				img = cv2.imread(path)
+				orig_img = cv2.imread(path)
+				if self.usingWorley :
+					img = randomizeBackground(orig_img,black=False,worley=self.worleynoise)
+					orig_img = randomizeBackground(orig_img,black=True)
+				else  :
+					img = randomizeBackground(orig_img,black=True) 
 				if self.denoising :
 					denoising_img = randomizeHSV(img)
-				img = randomizeBackground(img,black=True)
 				h,w,c = img.shape 
 				issue = False
 			except Exception as e :
@@ -1002,7 +1101,7 @@ class DatasetGazeRecognition(Dataset) :
 		try :
 			facialLandmarks = copy.deepcopy( self.parsedAnnotations[idx]['FacialLandmarks'])
 			fls = []
-			for k in facialLandmarks.keys() :
+			for k in sorted(facialLandmarks.keys()) :
 				fli = facialLandmarks[k]
 				fls.append( torch.FloatTensor([ fli[dim]/scalarfl[dim] for dim in sorted(fli.keys() ) ]).view((1,2)) )
 			facialLandmarks = torch.cat( fls, dim=0).view((-1))
@@ -1033,8 +1132,8 @@ class DatasetGazeRecognition(Dataset) :
 			
 			face_img = img[fy1:fy2, fx1:fx2,:]
 			# Random cropping over the face :
-			if self.randomcropping:
-				off = random.randint(1,128)
+			if randomcropping:
+				off = random.randint(1,h//2)
 				ow, oh = w+off,h+off			
 				face_img = cv2.resize(face_img, (ow,oh))
 				top = np.random.randint(0, oh-h)
@@ -1056,8 +1155,8 @@ class DatasetGazeRecognition(Dataset) :
 			
 			reye_img = img[ry1:ry2, rx1:rx2,:]
 			# Random cropping over the eyes :
-			if self.randomcropping:
-				off = random.randint(1,128)
+			if randomcropping:
+				off = random.randint(1,h//2)
 				ow, oh = w+off,h+off			
 				reye_img = cv2.resize(reye_img, (ow,oh))
 				top = np.random.randint(0, oh-h)
@@ -1074,8 +1173,8 @@ class DatasetGazeRecognition(Dataset) :
 			
 			leye_img = img[ly1:ly2, lx1:lx2,:]
 			# Random cropping over the eyes :
-			if self.randomcropping:
-				off = random.randint(1,128)
+			if randomcropping:
+				off = random.randint(1,h//2)
 				ow, oh = w+off,h+off			
 				leye_img = cv2.resize(leye_img, (ow,oh))
 				top = np.random.randint(0, oh-h)
@@ -1085,6 +1184,9 @@ class DatasetGazeRecognition(Dataset) :
 			leye_img = cv2.resize(leye_img, (w,h) )
 			
 			img = cv2.resize( img, (self.w, self.h) )
+			if self.usingWorley :
+				orig_img = cv2.resize( orig_img, (self.w, self.h) )
+			
 			reye_img = cv2.resize( reye_img, (self.w, self.h) )
 			leye_img = cv2.resize( leye_img, (self.w, self.h) )
 			face_img = cv2.resize(face_img, (self.w,self.h) )
@@ -1122,12 +1224,16 @@ class DatasetGazeRecognition(Dataset) :
 					img = np.concatenate( [face_img, reye_img, leye_img,face_grid], axis=2)
 			else :
 				img = np.concatenate( [img, reye_img, leye_img], axis=2)
+				if self.usingWorley :
+					orig_img = np.concatenate( [orig_img, reye_img, leye_img], axis=2)
 		else :
 			img = cv2.resize( img, (self.w, self.h) )
 
 		img = np.ascontiguousarray(img)
 		if self.denoising :
 			nimp = np.ascontiguousarray(nimg) 
+		if self.usingWorley :
+			orig_img = np.ascontiguousarray(orig_img)
 
 		'''
 		img = np.concatenate( [ img[:,:,idx:idx+3] for idx in [0,3,6] ], axis=0)
@@ -1201,17 +1307,25 @@ class DatasetGazeRecognition(Dataset) :
 		sample = {'image':img, 'gaze':gaze}
 		if self.denoising :
 			nsample = {'image':nimg, 'gaze':gaze}
+		if self.usingWorley :
+			orig_sample = {'image':orig_img, 'gaze':gaze}
 		
 		if self.transform is not None :
 			sample = self.transform(sample)
 			if self.denoising :
 				nsample = TransformPlus(nsample)
 				#nsample = self.transform(nsample)
+			if self.usingWorley :
+				orig_sample = TransformPlus(orig_sample)
 		
 		if self. denoising :
 			sample.update( {'noised_image':nsample['image']} )
 		else :		
 			sample.update( {'noised_image':sample['image'] } )
+		
+		if self.usingWorley :
+			#sample.update( {'orig_image':sample['image']})
+			sample.update( {'orig_image':orig_sample['image']})
 
 		if self.fov :
 			sample.update( {'fov': torch.ones((1,1))*fov })
@@ -1221,9 +1335,24 @@ class DatasetGazeRecognition(Dataset) :
 		sample.update( {'gazeDirections':gaze_directions})
 		if self.usingEyesPose:
 			sample.update( {'eyesPose':eyes_pose})
+		
+		if self.withQuery and not(query):
+			model = self.parsedAnnotations[idx]['data']['model']
+			size = self.nbrSample4Model(model)
+			query_idx = random.randint(0,size-1)
+			query_sample = self.getSample4Model(model,query_idx,query=True)
+			
+			query_input = torch.cat( [query_sample['head_pose'].float(), query_sample['gaze'].view(-1).float()], dim=0)
+			sample.update( {'query_input':query_input})
+
+			if 'orig_image' in query_sample.keys() :
+				sample.update( {'query_image':query_sample['orig_image']})
+			else :
+				sample.update( {'query_image':query_sample['image']})
 
 		return sample
 
+	
 	def generateVisualization(self, idx, shape=None, ratio=30, screen_size=[0.12,0.05],estimation=[0.02,0.02], cm_prec=0.02) :
 		idx = int(idx)
 		try :
@@ -1765,7 +1894,7 @@ def load_datasetXYSM4_0389_Roll10Pitch10_60deg(img_dim=224,stacking=False,random
 	return datasets
 
 
-def load_datasetX6Y3S5M6_121517182122_Roll4Pitch4_40deg_CX5_30cm_CY5_30cm(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False,eyesPose=False) :
+def load_datasetX6Y3S5M6_121517182122_Roll4Pitch4_40deg_CX5_30cm_CY5_30cm(img_dim=224,stacking=False,randomcropping=False,denoising=False,iTrackerFormat=False,iTrackerNoGridFormat=False,eyesPose=False,usingWorley=False,withQuery=False) :
 	ann_dir = './dataset121517182122/annotations'
 	img_dir = './dataset121517182122/images'
 	#ann_dir = './dataset-X6Y3S5M6-121517182122-Roll4Pitch4+40deg-CX5+30cm-CY5+30cm/annotations'
@@ -1775,7 +1904,7 @@ def load_datasetX6Y3S5M6_121517182122_Roll4Pitch4_40deg_CX5_30cm_CY5_30cm(img_di
 	transform = Transform 
 	#transform = TransformPlus
 
-	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat,eyesPose=eyesPose)
+	datasets = DatasetGazeRecognition(img_dir=img_dir,ann_dir=ann_dir,width=width,height=height,transform=transform, stacking=stacking, divide2=False,randomcropping=randomcropping,denoising=denoising,iTrackerFormat=iTrackerFormat,iTrackerNoGridFormat=iTrackerNoGridFormat,eyesPose=eyesPose,usingWorley=usingWorley,withQuery=withQuery)
 	
 	return datasets
 
@@ -1849,6 +1978,7 @@ def test() :
 
 def draw_landmarks(image,landmarks,n=-1) :
 	nbrLandmarks = landmarks.size(0)
+	print(nbrLandmarks)
 	h,w,c = image.shape
 	for i in range(nbrLandmarks) :
 		if i == n :
@@ -1866,11 +1996,13 @@ def test_facialLandmarks() :
 	i = 0
 	n = 0 
 	continuer = True
+	resample = True 
 	while continuer :
 		#i = i % len(dataset)
 
-		sample = dataset[i]
-
+		if resample :
+			sample = dataset[i]
+			resample = False 
 		#print(i, sample['image'].size(), sample['landmarks'])
 
 		img = sample['image'].numpy().transpose( (1,2,0))
@@ -1879,7 +2011,7 @@ def test_facialLandmarks() :
 		#print(img.shape)
 		#print('Sample size :',sample['facialLandmarks'].size())
 		try :
-			img = draw_landmarks(img, sample['facialLandmarks'],n=n)
+			img = draw_landmarks(img, sample['facialLandmarks'].view((-1,2)),n=n)
 		except Exception as e :
 			print(e)
 
@@ -1899,6 +2031,7 @@ def test_facialLandmarks() :
 				break
 			if key == ord('i') :
 				i += 1
+				resample = True
 				break
 
 
