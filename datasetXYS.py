@@ -261,7 +261,7 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 	imgs = []
 
 	#img_folder = sorted( os.listdir(img_dir) )
-	img_folder = os.listdir(img_dir)[:40000]
+	img_folder = os.listdir(img_dir)[:50000]
 	size = len(img_folder)
 	
 	lr = list()
@@ -1422,6 +1422,274 @@ class DatasetGazeRecognition(Dataset) :
 		sample = {'image': img, 'visualization':visualization, 'gaze':gaze }
 		
 		return sample
+
+
+
+
+
+class PrioritizedReplayBuffer :
+	def __init__(self,capacity, alpha=0.2,no_data=True) :
+		self.length = 0
+		self.counter = 0
+		self.alpha = alpha
+		self.epsilon = 1e-6
+		self.capacity = int(capacity)
+		self.tree = np.zeros(2*self.capacity-1)
+		self.no_data =no_data
+		self.min_error = 0.0
+		if not(no_data) :
+			self.data = np.zeros(self.capacity,dtype=object)
+	
+	def reset(self) :
+		self.__init__(capacity=self.capacity,alpha=self.alpha)
+
+	def add(self, priority, exp=None) :
+		idx = self.counter + self.capacity -1
+		
+		if not(self.no_data) and exp is not None :
+			self.data[self.counter] = exp
+		
+		self.counter += 1
+		self.length = min(self.length+1, self.capacity)
+		if self.counter >= self.capacity :
+			self.counter = 0
+		
+		self.update(idx,priority)
+	
+	def priority(self, error) :
+		if error < self.min_error:
+			self.min_error = error
+		error -= self.min_error 
+		return ( (error+self.epsilon)**self.alpha )
+
+	def normalized_priority(self, error) :
+		if error < self.min_error:
+			self.min_error = error
+		error -= self.min_error 
+		return self.priority(error)/self.total()
+			
+	def update(self, idx, priority) :
+		change = priority - self.tree[idx]
+		
+		self.tree[idx] = priority
+		
+		self._propagate(idx,change)
+		
+	def _propagate(self, idx, change) :
+		parentidx = (idx - 1) // 2
+		
+		self.tree[parentidx] += change
+		
+		if parentidx != 0 :
+			self._propagate(parentidx, change)
+			
+	def __call__(self, s) :
+		idx = self._retrieve(0,s)
+		dataidx = idx-self.capacity+1
+		if self._no_data :
+			data = dataidx
+		else :
+			data = self.data[dataidx]
+		priority = self.tree[idx]
+		
+		return (idx, priority, data)
+	
+	def get(self, s) :
+		idx = self._retrieve(0,s)
+		dataidx = idx-self.capacity+1
+		priority = self.tree[idx]
+		
+		if self.no_data :
+			data =dataidx
+			return (idx, priority, data)
+		else :
+			data = self.data[dataidx]
+			if not isinstance(data,EXP) :
+				raise TypeError
+			return (idx, priority, *data)
+
+	def _retrieve(self,idx,s) :
+		 leftidx = 2*idx+1
+		 rightidx = leftidx+1
+		 
+		 if leftidx >= len(self.tree) :
+		 	return idx
+		 
+		 if s <= self.tree[leftidx] :
+		 	return self._retrieve(leftidx, s)
+		 else :
+		 	return self._retrieve(rightidx, s-self.tree[leftidx])
+		 	
+	def total(self) :
+		return self.tree[0]
+
+	def __len__(self) :
+		return self.length
+
+
+from torch.utils.data.sampler import WeightedRandomSampler
+from torch.utils.data.dataloader import default_collate, _DataLoaderIter, DataLoader
+
+class _PrioritizedDataLoaderIter(_DataLoaderIter):
+	r"""Iterates over the DataLoader's dataset, as specified by a Prioritized Replay Buffer."""
+
+	def __init__(self, loader):
+		super(_PrioritizedDataLoaderIter, self).__init__(loader)
+		self.alpha = loader.alpha
+		self.per = PrioritizedReplayBuffer(capacity=len(loader), alpha=self.alpha, no_data=True)
+		init_priority = 1e2 #1.0/len(loader)
+		for i in range(len(loader)) :
+			self.per.add( priority = init_priority )
+		self.indices = []
+		self.batch_size = loader.batch_size 
+		self.epoch_sampling_counter = 0
+		
+	def reset(self) :
+		self.epoch_sampling_counter = 0
+
+	def _sample_next(self) :
+		self.epoch_sampling_counter += 1
+		if self.epoch_sampling_counter > len(self) :
+			raise StopIteration
+
+		prioritysum = self.per.total()
+		# Sampling within each sub-interval :
+		fraction = 0.0#0.8
+		low = fraction*prioritysum 
+		step = (prioritysum-low) / self.batch_size
+		randexp = np.arange(low,prioritysum,step)+np.random.uniform(low=0.0,high=step,size=(self.batch_size))
+
+		indices = list()
+		self.indices = list()
+		priorities = list()
+		for i in range(self.batch_size):
+			try :
+				el = self.per.get(randexp[i])
+				priorities.append(el[1])
+				self.indices.append(el[0])
+				indices.append(el[2])
+			except TypeError as e :
+				continue
+		
+		print(indices)
+		print(priorities)
+		return indices 
+
+	def update_per(self, new_errors) :
+		scalar = 1e-5
+		for (idx, new_error) in zip(self.indices,new_errors) :
+			new_priority = self.per.priority(new_error*scalar)
+			#new_priority = self.per.normalized_priority(new_error)
+			print(new_priority)
+			self.per.update(idx,new_priority)
+		
+		#print(self.per.tree)
+
+	def __next__(self):
+		'''
+		if self.num_workers == 0:  # same-process loading
+		'''
+		indices = self._sample_next()#next(self.sample_iter)  # may raise StopIteration
+		batch = self.collate_fn([self.dataset[i] for i in indices])
+		if self.pin_memory:
+		    batch = pin_memory_batch(batch)
+		return batch
+		'''
+		# check if the next sample has already been generated
+		if self.rcvd_idx in self.reorder_dict:
+		    batch = self.reorder_dict.pop(self.rcvd_idx)
+		    return self._process_next_batch(batch)
+
+		if self.batches_outstanding == 0:
+		    self._shutdown_workers()
+		    raise StopIteration
+
+		while True:
+		    assert (not self.shutdown and self.batches_outstanding > 0)
+		    idx, batch = self._get_batch()
+		    self.batches_outstanding -= 1
+		    if idx != self.rcvd_idx:
+		        # store out-of-order samples
+		        self.reorder_dict[idx] = batch
+		        continue
+		    return self._process_next_batch(batch)
+		'''
+
+class PrioritizedDataLoader(DataLoader):
+	r"""
+	Data loader. Combines a dataset and a sampler, and provides
+	single- or multi-process iterators over the dataset.
+
+	Arguments:
+	    dataset (Dataset): dataset from which to load the data.
+	    batch_size (int, optional): how many samples per batch to load
+	        (default: 1).
+	    num_workers (int, optional): how many subprocesses to use for data
+	        loading. 0 means that the data will be loaded in the main process.
+	        (default: 0)
+	    collate_fn (callable, optional): merges a list of samples to form a mini-batch.
+	    pin_memory (bool, optional): If ``True``, the data loader will copy tensors
+	        into CUDA pinned memory before returning them.
+	    drop_last (bool, optional): set to ``True`` to drop the last incomplete batch,
+	        if the dataset size is not divisible by the batch size. If ``False`` and
+	        the size of dataset is not divisible by the batch size, then the last batch
+	        will be smaller. (default: False)
+	    timeout (numeric, optional): if positive, the timeout value for collecting a batch
+	        from workers. Should always be non-negative. (default: 0)
+	    worker_init_fn (callable, optional): If not None, this will be called on each
+	        worker subprocess with the worker id (an int in ``[0, num_workers - 1]``) as
+	        input, after seeding and before data loading. (default: None)
+
+	.. note:: By default, each worker will have its PyTorch seed set to
+	          ``base_seed + worker_id``, where ``base_seed`` is a long generated
+	          by main process using its RNG. However, seeds for other libraies
+	          may be duplicated upon initializing workers (w.g., NumPy), causing
+	          each worker to return identical random numbers. (See
+	          :ref:`dataloader-workers-random-seed` section in FAQ.) You may
+	          use ``torch.initial_seed()`` to access the PyTorch seed for each
+	          worker in :attr:`worker_init_fn`, and use it to set other seeds
+	          before data loading.
+
+	.. warning:: If ``spawn`` start method is used, :attr:`worker_init_fn` cannot be an
+	             unpicklable object, e.g., a lambda function.
+	"""
+
+	def __init__(self, dataset, batch_size=1, shuffle=False, sampler=None, batch_sampler=None,
+					num_workers=0, collate_fn=default_collate, pin_memory=False, drop_last=False,
+					timeout=0, worker_init_fn=None, alpha=0.7):
+		super(PrioritizedDataLoader,self).__init__(dataset, batch_size, shuffle, sampler, batch_sampler,
+				num_workers, collate_fn, pin_memory, drop_last,
+				timeout, worker_init_fn)
+		self.alpha = alpha
+		self.ped = None
+
+	def __iter__(self):
+		if self.ped is None :
+			self.ped = _PrioritizedDataLoaderIter(self)
+		return self.ped 
+
+	def update_per(self, new_errors) :
+		self.ped.update_per(new_errors)
+
+	def reset(self) :
+		if self.ped is None :
+			self.ped = _PrioritizedDataLoaderIter(self)
+		self.ped.reset()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class LinearClassifier(nn.Module) :
