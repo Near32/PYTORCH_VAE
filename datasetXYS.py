@@ -82,8 +82,21 @@ def randomizeBackground(img,black=False,worley=None) :
 	background_color = img[0,0]
 	mask = np.array(img == background_color,dtype=np.uint8)
 	if worley is not None :
-		random_background = worley
-		random_background = np.expand_dims( cv2.resize(random_background, (img.shape[0], img.shape[1])) , axis=2)
+		random_background = np.expand_dims( cv2.resize(worley, (img.shape[0], img.shape[1])) , axis=2)
+	elif black :
+		random_background = np.zeros(img.shape,dtype=np.uint8)
+	else :
+		random_background = np.random.randint(255, size=img.shape,dtype=np.uint8)
+	ret = img*(1-mask)+random_background*mask 
+	return ret
+
+def randomizeTextures(img,black=False,worley=None,nbrColorSampling=32) :
+	h = img.shape[0]
+	w = img.shape[1]
+	texture_colors = img[0,0]
+	mask = np.array(img == background_color,dtype=np.uint8)
+	if worley is not None :
+		random_background = np.expand_dims( cv2.resize(worley, (img.shape[0], img.shape[1])) , axis=2)
 	elif black :
 		random_background = np.zeros(img.shape,dtype=np.uint8)
 	else :
@@ -261,7 +274,9 @@ def parse_image_annotation_GazeRecognition(ann_dir,img_dir) :
 	imgs = []
 
 	#img_folder = sorted( os.listdir(img_dir) )
-	img_folder = os.listdir(img_dir)[:50000]
+	img_folder = os.listdir(img_dir)[:1000]
+	#img_folder = os.listdir(img_dir)[:10000]
+	#img_folder = os.listdir(img_dir)[:20000]
 	size = len(img_folder)
 	
 	lr = list()
@@ -828,7 +843,7 @@ class DatasetGazeRecognition(Dataset) :
 		self.stacking = stacking
 		self.divide2 = divide2
 		self.usingWorley = usingWorley
-		self.worley_lcount = 512
+		self.worley_lcount = 16
 		self.worley_counter = self.worley_lcount+1 
 		print('WORLEY NOISE DISTRACTORS : ',self.usingWorley)
 		
@@ -1571,8 +1586,6 @@ class _PrioritizedDataLoaderIter(_DataLoaderIter):
 			except TypeError as e :
 				continue
 		
-		print(indices)
-		print(priorities)
 		return indices 
 
 	def update_per(self, new_errors) :
@@ -1580,11 +1593,8 @@ class _PrioritizedDataLoaderIter(_DataLoaderIter):
 		for (idx, new_error) in zip(self.indices,new_errors) :
 			new_priority = self.per.priority(new_error*scalar)
 			#new_priority = self.per.normalized_priority(new_error)
-			print(new_priority)
 			self.per.update(idx,new_priority)
 		
-		#print(self.per.tree)
-
 	def __next__(self):
 		'''
 		if self.num_workers == 0:  # same-process loading
